@@ -1,7 +1,5 @@
 
-# FHEON Framework Documentation
-
-## FHEON
+# FHEON - A Configurable Framework for Developing Encrypted Neural Networks
 
 FHEON is a configurable framework for building **privacy-preserving convolutional neural networks (CNNs)** using **Homomorphic Encryption (HE)**.  
 
