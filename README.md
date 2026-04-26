@@ -1,5 +1,7 @@
 
-# FHEON - A Configurable Framework for Developing Encrypted Neural Networks
+# FHEON Framework Documentation
+
+## FHEON
 
 FHEON is a configurable framework for building **privacy-preserving convolutional neural networks (CNNs)** using **Homomorphic Encryption (HE)**.  
 
@@ -39,8 +41,10 @@ To build FHEON, follow the instructions at
 
 ## Citation
 
-If you use FHEON in your work, please cite the following paper:
+If you use FHEON in your work, please cite the following papers:
 
+
+### Encrypted Single-input Inference
 ```bibtex
 @misc{njungle2025fheonconfigurableframeworkdeveloping,
       title={FHEON: A Configurable Framework for Developing Privacy-Preserving Neural Networks Using Homomorphic Encryption}, 
@@ -55,4 +59,21 @@ If you use FHEON in your work, please cite the following paper:
 
 Which is also avaliable online at
 [FHEON: A Configurable Framework for Developing Encrypted Privacy-Preserving Neural Networks Using Homomorphic Encryption](https://arxiv.org/abs/2510.03996)
+
+
+### Encrypted High-throughput Inference
+```bibtex
+@misc{njungle2026deepencryptedtraininglowlatency,
+      title={Towards Deep Encrypted Training: Low-Latency, Memory-Efficient, and High-Throughput Inference for Privacy-Preserving Neural Networks}, 
+      author={Nges Brian Njungle and Eric Jahns and Michel A. Kinsy},
+      year={2026},
+      eprint={2604.16834},
+      archivePrefix={arXiv},
+      primaryClass={cs.CR},
+      url={https://arxiv.org/abs/2604.16834}, 
+}
+```
+
+Which is also avaliable online at
+[Towards Deep Encrypted Training: Low-Latency, Memory-Efficient, and High-Throughput Inference for Privacy-Preserving Neural Networks](https://arxiv.org/abs/2604.16834)
 

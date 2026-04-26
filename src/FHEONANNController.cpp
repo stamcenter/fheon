@@ -36,7 +36,7 @@
 #include <iostream>
 #include <cmath>
 #include <thread>
- #include "FHEONANNController.h"
+#include "FHEONANNController.h"
 
 namespace fs = std::filesystem;
 
@@ -57,19 +57,19 @@ void FHEONANNController::setContext(CryptoContext<DCRTPoly>& in_context){
  * @param outputChannels  Number of output channels in the convolution layer.
  * @param kernelWidth      Size of the convolution kernel (assumed square).
  * @param padding     Amount of zero-padding applied around the input image.
- * @param Stride       Stride length used for the convolution.
+ * @param stride       stride length used for the convolution.
  *
  * @return A vector of integers representing the rotation positions required 
  *         to perform the convolution.
  */
 vector <int> FHEONANNController::generate_convolution_rotation_positions(int inputWidth, int inputChannels, int outputChannels,
-                                                    int kernelWidth, int padding, int Stride){
+                                                    int kernelWidth, int padding, int stride){
         
     vector<int> keys_position;
     int inputWidth_sq = pow(inputWidth, 2);
     int padded_width = inputWidth+(2*padding);
     int padding_width_sq = pow(padded_width, 2);
-    int width_out = ((padded_width - (kernelWidth - 1) - 1)/Stride)+1;
+    int width_out = ((padded_width - (kernelWidth - 1) - 1)/stride)+1;
     int width_out_sq = pow(width_out,2);
     keys_position.push_back(inputWidth);
     keys_position.push_back(padded_width);
@@ -117,25 +117,25 @@ vector <int> FHEONANNController::generate_convolution_rotation_positions(int inp
  *
  * @param inputWidth       Width of the input feature map (assumed square).
  * @param kernelWidth     Size of the pooling kernel (assumed square).
- * @param Stride      Stride length used for the pooling operation.
+ * @param stride      stride length used for the pooling operation.
  * @param inputChannels  Number of input channels to the pooling layer.
  *
  * @return A vector of integers representing the rotation positions required 
  *         for average pooling.
  */
 vector <int> FHEONANNController::generate_avgpool_rotation_positions(int inputWidth, int kernelWidth,
-                int Stride, int inputChannels){
+                int stride, int inputChannels){
     
     vector<int> keys_position;
-    int width_avgpool_out = (inputWidth/Stride);
+    int width_avgpool_out = (inputWidth/stride);
     int width_avgpool_sq = pow(width_avgpool_out, 2); 
     int width_sq = pow(inputWidth, 2);
     keys_position.push_back(width_sq);
     keys_position.push_back(inputWidth);
     keys_position.push_back(kernelWidth);
-    keys_position.push_back(Stride);
+    keys_position.push_back(stride);
     keys_position.push_back(width_avgpool_out);
-    keys_position.push_back((Stride*inputWidth));
+    keys_position.push_back((stride*inputWidth));
 
     for(int i=1; i<inputChannels; i++){
         int rot_val = i*width_avgpool_out;
@@ -173,17 +173,17 @@ vector <int> FHEONANNController::generate_avgpool_rotation_positions(int inputWi
  * @param inputWidth        Width of the input image (assumed square).
  * @param inputChannels   Number of input channels in the convolution layer.
  * @param outputChannels  Number of output channels in the convolution layer.
- * @param Stride       Stride length used for the convolution.
+ * @param stride       stride length used for the convolution.
  * @param stridingType    Define the type of striding to be used (basic, single_channel, multi_channels)
  * @return A vector of integers representing the rotation positions required 
  *         for the optimized convolution.
  */
 vector <int> FHEONANNController::generate_optimized_convolution_rotation_positions(
-    int inputWidth,  int inputChannels, int outputChannels, int Stride, string stridingType){
+    int inputWidth,  int inputChannels, int outputChannels, int stride, string stridingType){
         
     vector<int> keys_position;
     int inputWidth_sq = pow(inputWidth, 2);
-    int width_out = (inputWidth/Stride);
+    int width_out = (inputWidth/stride);
     int width_out_sq = pow(width_out,2);
     keys_position.push_back(-1);
     keys_position.push_back(1);
@@ -191,7 +191,7 @@ vector <int> FHEONANNController::generate_optimized_convolution_rotation_positio
     keys_position.push_back(inputWidth);
     keys_position.push_back(-inputWidth);
 
-    if(Stride > 1){
+    if(stride > 1){
         if(stridingType == "basic"){
             /**** USE THIS BLOCK FOR BASIC STRIDING */
             for(int i=1; i < inputChannels; i++){
@@ -212,10 +212,10 @@ vector <int> FHEONANNController::generate_optimized_convolution_rotation_positio
                 keys_position.push_back( pow(2, s-1));
             }
             keys_position.push_back(pow(2, log2(width_out)-1));
-            int rotAmount = (Stride * inputWidth - width_out);
+            int rotAmount = (stride * inputWidth - width_out);
             keys_position.push_back(rotAmount);
 
-            int shift = (inputWidth_sq - width_out_sq)* ((outputChannels / Stride) - 1);
+            int shift = (inputWidth_sq - width_out_sq)* ((outputChannels / stride) - 1);
             keys_position.push_back(-shift);
 
             shift = -(inputWidth_sq - width_out_sq);
@@ -236,10 +236,10 @@ vector <int> FHEONANNController::generate_optimized_convolution_rotation_positio
                 keys_position.push_back( pow(2, s-1));
             }
             keys_position.push_back(pow(2, log2(width_out)-1));
-            int rotAmount = (Stride * inputWidth - width_out);
+            int rotAmount = (stride * inputWidth - width_out);
             keys_position.push_back(rotAmount);
 
-            int shift = (inputWidth_sq - width_out_sq)* ((outputChannels / Stride) - 1);
+            int shift = (inputWidth_sq - width_out_sq)* ((outputChannels / stride) - 1);
             keys_position.push_back(-shift);
 
             shift = -(inputWidth_sq - width_out_sq);
@@ -250,6 +250,17 @@ vector <int> FHEONANNController::generate_optimized_convolution_rotation_positio
 
             int rotateAmount = - inputChannels * width_out_sq;
             keys_position.push_back(rotateAmount);
+
+            // realign
+            int outputSlots = outputChannels * width_out_sq;
+            if (num_slots < outputSlots) {
+                int j =0;
+                for(int i=0; i< outputChannels; i+=inputChannels){
+                    j++;
+                    int rotateAmount = - j * (inputChannels * width_out_sq);
+                    keys_position.push_back(rotateAmount);
+                }
+            }
         }
     }
     else{
@@ -283,7 +294,7 @@ vector <int> FHEONANNController::generate_optimized_convolution_rotation_positio
  * @param inputWidth        Width of the input feature map (assumed square).
  * @param inputChannels   Number of input channels in the pooling layer.
  * @param kernelWidth      Size of the pooling kernel (assumed square).
- * @param Stride       Stride length used for the pooling operation.
+ * @param stride       stride length used for the pooling operation.
  * @param globalPooling   Boolean flag indicating whether global average 
  *                        pooling is applied (true = pool entire feature map).
  * @param stridingType    Define the type of striding to be used (basic, single_channel, multi_channels)
@@ -293,7 +304,7 @@ vector <int> FHEONANNController::generate_optimized_convolution_rotation_positio
  *         for optimized average pooling.
  */
 vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(int inputWidth,  int inputChannels, 
-                                        int kernelWidth, int Stride, bool globalPooling, string stridingType, int rotationIndex){
+                                        int kernelWidth, int stride, bool globalPooling, string stridingType, int rotationIndex){
     
     vector<int> keys_position;
     if(globalPooling){
@@ -308,15 +319,15 @@ vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(i
         return keys_position;
     }
 
-    int width_avgpool_out = (inputWidth/Stride);
+    int width_avgpool_out = (inputWidth/stride);
     int width_avgpool_sq = pow(width_avgpool_out, 2); 
     int width_sq = pow(inputWidth, 2);
     keys_position.push_back(width_sq);
     keys_position.push_back(inputWidth);
-    keys_position.push_back(Stride);
+    keys_position.push_back(stride);
     keys_position.push_back(width_avgpool_out);
     keys_position.push_back(width_avgpool_sq);
-    keys_position.push_back((Stride*inputWidth));
+    keys_position.push_back((stride*inputWidth));
 
     if(inputWidth<=2){
         for(int pos=0; pos<inputChannels; pos++){
@@ -325,7 +336,7 @@ vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(i
         return keys_position;
     }
 
-    if(Stride>1){
+    if(stride>1){
         if(stridingType == "basic"){
             /**** USE THIS BLOCK FOR BASIC STRIDING */
             for(int i=1; i < inputChannels; i++){
@@ -346,10 +357,10 @@ vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(i
                 keys_position.push_back( pow(2, s-1));
             }
             keys_position.push_back(pow(2, log2(width_avgpool_out)-1));
-            int rotAmount = (Stride * inputWidth - width_avgpool_out);
+            int rotAmount = (stride * inputWidth - width_avgpool_out);
             keys_position.push_back(rotAmount);
     
-            rotAmount = (width_sq - width_avgpool_sq)* ((inputChannels / Stride) - 1);
+            rotAmount = (width_sq - width_avgpool_sq)* ((inputChannels / stride) - 1);
             keys_position.push_back(-rotAmount);
 
             rotAmount = (width_sq - width_avgpool_sq);
@@ -370,10 +381,10 @@ vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(i
                 keys_position.push_back( pow(2, s-1));
             }
             keys_position.push_back(pow(2, log2(width_avgpool_out)-1));
-            int rotAmount = (Stride * inputWidth - width_avgpool_out);
+            int rotAmount = (stride * inputWidth - width_avgpool_out);
             keys_position.push_back(rotAmount);
 
-            int shift = (width_sq - width_avgpool_sq)* ((inputChannels / Stride) - 1);
+            int shift = (width_sq - width_avgpool_sq)* ((inputChannels / stride) - 1);
             keys_position.push_back(-shift);
 
             shift = -(width_sq - width_avgpool_sq);
@@ -418,7 +429,10 @@ vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(i
  *         for fully connected layers.
  */
 vector <int> FHEONANNController::generate_linear_rotation_positions(int maxFCLayeroutputs, int rotationPositions){
+    
     vector<int> keys_position;
+    // keys_position.push_back(-3276);
+
     for(int counter=0; counter<maxFCLayeroutputs; counter+=rotationPositions){
         // int rot_val =counter*rotationPositions;
         keys_position.push_back(-counter);
@@ -426,6 +440,7 @@ vector <int> FHEONANNController::generate_linear_rotation_positions(int maxFCLay
     
     for(int i=1; i<=rotationPositions; i++){
          keys_position.push_back(i);
+         keys_position.push_back(-i);
     }
     std::sort(keys_position.begin(), keys_position.end());
     auto new_end = std::remove(keys_position.begin(), keys_position.end(), 0);
@@ -455,7 +470,7 @@ vector <int> FHEONANNController::generate_linear_rotation_positions(int maxFCLay
  * @param outputChannels   Number of output channels.
  * @param kernelWidth      Width of the convolution kernel (assumed square).
  * @param paddingLen       Amount of zero-padding applied around the input.
- * @param Stride        Stride length for the convolution.
+ * @param stride        stride length for the convolution.
  *
  * @return Ctext           Ciphertext representing the encrypted result of 
  *                         the convolution operation.
@@ -464,11 +479,11 @@ vector <int> FHEONANNController::generate_linear_rotation_positions(int maxFCLay
  * @see generate_optimized_convolution_rotation_positions()
  */
 Ctext FHEONANNController::he_convolution(Ctext& encryptedInput, vector<vector<Ptext>>& kernelData, Ptext& biasInput,
-        int inputWidth,  int inputChannels, int outputChannels,  int kernelWidth, int paddingLen, int Stride) {
+        int inputWidth,  int inputChannels, int outputChannels,  int kernelWidth, int paddingLen, int stride) {
 
-    int kernelSize = kernelWidth * kernelWidth;
+    int kernelSq = kernelWidth * kernelWidth;
     int inputSize = inputWidth * inputWidth;
-    int outputWidth = ((inputWidth - kernelWidth) / Stride) + 1;
+    int outputWidth = ((inputWidth - kernelWidth) / stride) + 1;
     int outputSize = outputWidth * outputWidth;
     int encode_level = encryptedInput->GetLevel();
 
@@ -502,7 +517,7 @@ Ctext FHEONANNController::he_convolution(Ctext& encryptedInput, vector<vector<Pt
         vector<Ctext> mult_results;
 
         // Per-kernel value multiplies
-        for (int k = 0; k < kernelSize; k++) {
+        for (int k = 0; k < kernelSq; k++) {
             mult_results.push_back(context->EvalMult(rotated_ciphertexts[k], kernelData[out_ch][k]));
         }
 
@@ -520,8 +535,8 @@ Ctext FHEONANNController::he_convolution(Ctext& encryptedInput, vector<vector<Pt
         conv_sum = context->EvalMult(conv_sum, cleaning_mask);
 
         // STEP 5 - Striding
-        if (Stride > 1) {
-            strided_cipher = downsample(conv_sum, inputWidth, Stride);
+        if (stride > 1) {
+            strided_cipher = downsample(conv_sum, inputWidth, stride);
         } 
         else {
             vector<Ctext> strided_vec;
@@ -566,7 +581,7 @@ Ctext FHEONANNController::he_convolution(Ctext& encryptedInput, vector<vector<Pt
  * @param inputWidth         Width of the input feature map (assumed square).
  * @param kernelWidth         Size of the convolution kernel (assumed square).
  * @param padding        Amount of zero-padding to apply.
- * @param stride        Stride length for the convolution.
+ * @param stride        stride length for the convolution.
  * @param inputChannels  Number of input channels.
  * @param outputChannels Number of output channels.
  *
@@ -652,7 +667,7 @@ Ctext FHEONANNController::he_convolution_advanced(Ctext& encryptedInput, vector<
  * @param inputWidth       Width of the input feature map (assumed square).
  * @param inputChannels    Number of input channels.
  * @param outputChannels   Number of output channels.
- * @param Stride        Stride length (must be 1 for this optimized version).
+ * @param stride        stride length (must be 1 for this optimized version).
  * @param index            Index of the current kernel or output channel 
  *                         being processed.
  *
@@ -661,7 +676,7 @@ Ctext FHEONANNController::he_convolution_advanced(Ctext& encryptedInput, vector<
  *
  * @note This optimized implementation should only be used when 
  *       stride = 1, kernel size = 3, and padding = 3. For other cases, 
- *       use @ref he_convolution() or @ref he_convolution_advanced().
+ *       use @ref he_convolution or @ref he_convolution_advanced().
  *
  * @see he_convolution()
  * @see he_convolution_advanced()
@@ -671,11 +686,11 @@ Ctext FHEONANNController::he_convolution_advanced(Ctext& encryptedInput, vector<
  *          incorrect results.
  */
 Ctext FHEONANNController::he_convolution_optimized(Ctext& encryptedInput,  vector<vector<Ptext>>& kernelData, Ptext& biasInput, 
-            int inputWidth, int inputChannels, int outputChannels, int Stride, int index){
+            int inputWidth, int inputChannels, int outputChannels, int stride, int index){
     
-    int kernelWidth = 9;
+    int kernelSq = 9;
     int inputSize = inputWidth*inputWidth;
-    int widthOut = inputWidth/Stride;
+    int widthOut = inputWidth/stride;
     int outputSize = widthOut*widthOut;
     int encode_level = encryptedInput->GetLevel();
     vector<Ctext> rotated_ciphertexts;
@@ -694,11 +709,11 @@ Ctext FHEONANNController::he_convolution_optimized(Ctext& encryptedInput,  vecto
     rotated_ciphertexts.push_back(context->EvalRotate(second_shot, inputWidth));
     Ptext cleaning_mask =  context->MakeCKKSPackedPlaintext(generate_mixed_mask(inputSize, (inputChannels*inputSize)), 1, encode_level);
             
-    vector<Ctext> kernelSum(kernelWidth);
+    vector<Ctext> kernelSum(kernelSq);
     vector<Ctext> sumVec(inputChannels);
     vector<Ctext> finalVec(outputChannels);
     for(int outCh=0; outCh<outputChannels; outCh++){
-        for(int j=0; j<kernelWidth; j++){
+        for(int j=0; j<kernelSq; j++){
             kernelSum[j] = context->EvalMult(rotated_ciphertexts[j], kernelData[outCh][j]);
         }
         sumVec[0] = context->EvalAddMany(kernelSum);
@@ -709,8 +724,8 @@ Ctext FHEONANNController::he_convolution_optimized(Ctext& encryptedInput,  vecto
         }
         Ctext interCipher = context->EvalMult(context->EvalAddMany(sumVec), cleaning_mask);
         /**** STEP 5: THIS IS EXTRACTING DATA FROM CONVOLUTION WITH STRIDING > 1 */
-        if(Stride != 1){
-            interCipher = downsample(interCipher, inputWidth, Stride);
+        if(stride != 1){
+            interCipher = downsample(interCipher, inputWidth, stride);
         }
         /** STEP 7: ROTATE THE CIPHERTEXT FOR EACH CHANNEL TO RECONSTRUCT THE OUTPUT */
         if(outCh == 0){
@@ -755,9 +770,9 @@ Ctext FHEONANNController::he_convolution_optimized(Ctext& encryptedInput,  vecto
 Ctext  FHEONANNController::he_convolution_optimized_with_multiple_channels(Ctext& encryptedInput, vector<vector<Ptext>>& kernelData, 
     Ptext& biasInput,  int inputWidth,  int inputChannels, int outputChannels){
     
-    constexpr int Stride = 2;
-    constexpr int kernelWidth = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
-    int outputWidth = inputWidth / Stride;
+    constexpr int stride = 2;
+    constexpr int kernelSq = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
+    int outputWidth = inputWidth / stride;
     int inputSize = inputWidth * inputWidth;
     int outputSize = outputWidth * outputWidth;
     int encodeLevel = encryptedInput->GetLevel();
@@ -791,12 +806,12 @@ Ctext  FHEONANNController::he_convolution_optimized_with_multiple_channels(Ctext
     vector<Ctext> mainResults(outchanSize);
     vector<Ctext> inChannelsResults(inputChannels);
     vector<Ctext> convChannelSum(inputChannels);
-    vector<Ctext> kernelSum(kernelWidth);
+    vector<Ctext> kernelSum(kernelSq);
     // Process output channels with batch approach
     for (int outCh = 0; outCh < outputChannels; outCh++) {
 
         // Apply convolution with batch channel processing
-        for (int j = 0; j<kernelWidth; ++j) {
+        for (int j = 0; j<kernelSq; ++j) {
             kernelSum[j] = context->EvalMult(rotatedInputs[j], kernelData[outCh][j]);
         }
         convChannelSum[0] = context->EvalAddMany(kernelSum);
@@ -813,7 +828,7 @@ Ctext  FHEONANNController::he_convolution_optimized_with_multiple_channels(Ctext
 
         if(innerCount == inputChannels-1){
             mainResult = context->EvalAddMany(inChannelsResults);
-            mainResult = downsample_with_multiple_channels(mainResult, inputWidth, Stride, inputChannels);
+            mainResult = downsample_with_multiple_channels(mainResult, inputWidth, stride, inputChannels);
             mainResult = context->EvalMult(mainResult, cleaningoutputMask);
             shortcutResult = context->EvalMult(shortcutResult, cleaningoutputMask);
             
@@ -877,8 +892,8 @@ Ctext FHEONANNController::he_shortcut_convolution(Ctext& encryptedInput,  vector
             int inputWidth, int inputChannels, int outputChannels){
 
     int width_sq = pow(inputWidth, 2);
-    int Stride = 2;
-    int width_out = (inputWidth/Stride);
+    int stride = 2;
+    int width_out = (inputWidth/stride);
     int width_out_sq =  pow(width_out, 2);
     int encode_level = encryptedInput->GetLevel();
     int noSlots = inputChannels*width_sq;
@@ -901,7 +916,7 @@ Ctext FHEONANNController::he_shortcut_convolution(Ctext& encryptedInput,  vector
         interCipher = context->EvalMult(context->EvalAddMany(sum_vec), cleaning_mask);
 
         /**** STEP 5: THIS IS EXTRACTING DATA FROM CONVOLUTION WITH STRIDING > 1 */
-        interCipher = downsample(interCipher, inputWidth, Stride);
+        interCipher = downsample(interCipher, inputWidth, stride);
 
         /** STEP 7: ROTATE THE CIPHERTEXT FOR EACH CHANNEL TO RECONSTRUCT THE OUTPUT */
         if(i == 0){
@@ -962,9 +977,9 @@ Ctext FHEONANNController::he_shortcut_convolution(Ctext& encryptedInput,  vector
 vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized( const Ctext& encryptedInput, const vector<vector<Ptext>>& kernelData, 
     const vector<Ptext>& shortcutKernelData, Ptext& biasInput, Ptext& shortcutBiasVector,  
     int inputWidth,  int inputChannels, int outputChannels){
-    constexpr int Stride = 2;
-    constexpr int kernelWidth = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
-    int outputWidth = inputWidth / Stride;
+    constexpr int stride = 2;
+    constexpr int kernelSq = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
+    int outputWidth = inputWidth / stride;
     int inputSize = inputWidth * inputWidth;
     int outputSize = outputWidth * outputWidth;
     int encodeLevel = encryptedInput->GetLevel();
@@ -991,14 +1006,14 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized( const 
     // Create vectors to store results
     vector<Ctext> convChannelSum(inputChannels), shortcutChannelSum(inputChannels);
     vector<Ctext> mainResults(outputChannels), shortcutResults(outputChannels);
-    vector<Ctext> kernelSum(kernelWidth);
+    vector<Ctext> kernelSum(kernelSq);
     Ctext mainResult, shortcutResult;
     
     // Process output channels with batch approach
     for (int outCh = 0; outCh < outputChannels; outCh++) {
 
         // Apply convolution with batch channel processing
-        for (int j = 0; j < kernelWidth; ++j) {
+        for (int j = 0; j < kernelSq; ++j) {
             kernelSum[j] = context->EvalMult(rotatedInputs[j], kernelData[outCh][j]);
         }
         convChannelSum[0] = context->EvalAddMany(kernelSum);
@@ -1013,8 +1028,8 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized( const 
         shortcutResult = context->EvalMult(context->EvalAddMany(shortcutChannelSum), cleaningMask);
 
         /** Compute Striding */
-        mainResult = downsample(mainResult, inputWidth, Stride);
-        shortcutResult = downsample(shortcutResult, inputWidth, Stride);
+        mainResult = downsample(mainResult, inputWidth, stride);
+        shortcutResult = downsample(shortcutResult, inputWidth, stride);
         
         if( outCh==0 ){
             mainResults[outCh] = mainResult;
@@ -1080,9 +1095,9 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized( const 
 vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_multiple_channels( const Ctext& encryptedInput, const vector<vector<Ptext>>& kernelData, 
     const vector<Ptext>& shortcutKernelData, Ptext& biasInput, Ptext& shortcutBiasInput,  
     int inputWidth,  int inputChannels, int outputChannels){
-    constexpr int Stride = 2;
-    constexpr int kernelWidth = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
-    int outputWidth = inputWidth / Stride;
+    constexpr int stride = 2;
+    constexpr int kernelSq = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
+    int outputWidth = inputWidth / stride;
     int inputSize = inputWidth * inputWidth;
     int outputSize = outputWidth * outputWidth;
     int encodeLevel = encryptedInput->GetLevel();
@@ -1116,12 +1131,13 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_mu
     vector<Ctext> mainResults(outchanSize), shortcutResults(outchanSize);
     vector<Ctext> inChannelsResults(inputChannels), inshortcutResults(inputChannels);
     vector<Ctext> convChannelSum(inputChannels), shortcutChannelSum(inputChannels);
-    vector<Ctext> kernelSum(kernelWidth);
+    vector<Ctext> kernelSum(kernelSq);
+
     // Process output channels with batch approach
     for (int outCh = 0; outCh < outputChannels; outCh++) {
 
         // Apply convolution with batch channel processing
-        for (int j = 0; j<kernelWidth; ++j) {
+        for (int j = 0; j<kernelSq; ++j) {
             kernelSum[j] = context->EvalMult(rotatedInputs[j], kernelData[outCh][j]);
         }
         convChannelSum[0] = context->EvalAddMany(kernelSum);
@@ -1144,8 +1160,8 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_mu
         if(innerCount == inputChannels-1){
             mainResult = context->EvalAddMany(inChannelsResults);
             shortcutResult = context->EvalAddMany(inshortcutResults);
-            mainResult = downsample_with_multiple_channels(mainResult, inputWidth, Stride, inputChannels);
-            shortcutResult = downsample_with_multiple_channels(shortcutResult, inputWidth,Stride,  inputChannels);
+            mainResult = downsample_with_multiple_channels(mainResult, inputWidth, stride, inputChannels);
+            shortcutResult = downsample_with_multiple_channels(shortcutResult, inputWidth,stride,  inputChannels);
             mainResult = context->EvalMult(mainResult, cleaningoutputMask);
             shortcutResult = context->EvalMult(shortcutResult, cleaningoutputMask);
             
@@ -1154,6 +1170,7 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_mu
                 shortcutResults[outCount] = shortcutResult;
             }
             else{
+                
                 int rotateAmount = - outCount * (inputChannels * outputSize);
                 mainResults[outCount] = context->EvalRotate(mainResult, rotateAmount);
                 shortcutResults[outCount] = context->EvalRotate(shortcutResult, rotateAmount);   
@@ -1192,7 +1209,7 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_mu
  * @param inputWidth       Width of the input feature map (assumed square).
  * @param inputChannels    Number of input channels.
  * @param kernelWidth      Width of the pooling kernel (assumed square).
- * @param Stride        Stride length used for the pooling operation.
+ * @param stride        stride length used for the pooling operation.
  *
  * @return Ctext           Ciphertext representing the encrypted result 
  *                         of the average pooling operation.
@@ -1200,10 +1217,10 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_mu
  * @see generate_avgpool_rotation_positions()
  * @see generate_avgpool_optimized_rotation_positions()
  */
-Ctext FHEONANNController::he_avgpool(Ctext encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int Stride){
+Ctext FHEONANNController::he_avgpool(Ctext encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int stride){
 
-    int outputWidth = inputWidth/Stride;
-    int kernelSize = pow(kernelWidth, 2);
+    int outputWidth = inputWidth/stride;
+    int kernelSq = pow(kernelWidth, 2);
     int inputSize = pow(inputWidth, 2);
     int outputSize = pow(outputWidth, 2);
     int encode_level = encryptedInput->GetLevel();
@@ -1233,16 +1250,16 @@ Ctext FHEONANNController::he_avgpool(Ctext encryptedInput,  int inputWidth, int 
     
     /*** STEP 3: Multiply the scale value with the sum cipher */
     int num_of_elements = inputChannels*inputSize;
-    auto masked_data = generate_scale_mask(kernelSize, num_of_elements);
+    auto masked_data = generate_scale_mask(kernelSq, num_of_elements);
     auto masked_cipher =  context->MakeCKKSPackedPlaintext(masked_data, 1, encode_level);
     sum_cipher = context->EvalMult(sum_cipher, masked_cipher);
 
     /*** STEP 4: Extract the values needed in the ciphertext */
-    Ctext strided_cipher = downsample(sum_cipher, inputWidth,  Stride);
+    Ctext strided_cipher = downsample(sum_cipher, inputWidth,  stride);
     channel_ciphers.push_back(strided_cipher);
     for(int i = 1; i<inputChannels; i++){
         sum_cipher = context->EvalRotate(sum_cipher, inputSize);
-        channel_ciphers.push_back(context->EvalRotate(downsample(sum_cipher, inputWidth, Stride), -(i*outputSize)));
+        channel_ciphers.push_back(context->EvalRotate(downsample(sum_cipher, inputWidth, stride), -(i*outputSize)));
     }
     Ctext finalResults = context->EvalAddMany(channel_ciphers);
     channel_ciphers.clear();
@@ -1264,7 +1281,7 @@ Ctext FHEONANNController::he_avgpool(Ctext encryptedInput,  int inputWidth, int 
  * @param inputWidth       Width of the input feature map (assumed square).
  * @param outputChannels   Number of output channels.
  * @param kernelWidth       Width of the pooling kernel (assumed square).
- * @param stride      Stride length for the pooling operation.
+ * @param stride      stride length for the pooling operation.
  * @param padding      Amount of zero-padding applied around the input.
  *
  * @return Ctext           Ciphertext representing the encrypted result 
@@ -1345,7 +1362,7 @@ Ctext FHEONANNController::he_avgpool_advanced(Ctext encryptedInput, int inputWid
  * @param inputWidth       Width of the input feature map (assumed square).
  * @param inputChannels    Number of input channels.
  * @param kernelWidth      Width of the pooling kernel (assumed square).
- * @param Stride        Stride length for the pooling operation.
+ * @param stride        stride length for the pooling operation.
  *
  * @return Ctext           Ciphertext representing the encrypted result 
  *                         of the optimized average pooling operation.
@@ -1358,11 +1375,11 @@ Ctext FHEONANNController::he_avgpool_advanced(Ctext encryptedInput, int inputWid
  * @see he_avgpool__advanced()
  * @see generate_avgpool_optimized_rotation_positions()
  */
-Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int Stride){
+Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int stride){
 
-    int kernelSize = pow(kernelWidth, 2);
+    int kernelSq = pow(kernelWidth, 2);
     int inputSize = pow(inputWidth, 2);
-    int outputWidth = inputWidth/Stride;
+    int outputWidth = inputWidth/stride;
     int outputSize = pow(outputWidth, 2);
     int encode_level = encryptedInput->GetLevel();
     
@@ -1377,7 +1394,7 @@ Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputW
 
     /*** STEP 3: Multiply the scale value with the sum cipher */
     int num_of_elements = inputChannels*inputSize;
-    auto masked_data = generate_scale_mask(kernelSize, num_of_elements);
+    auto masked_data = generate_scale_mask(kernelSq, num_of_elements);
     auto masked_cipher =  context->MakeCKKSPackedPlaintext(masked_data, 1, encode_level);
     sum_cipher = context->EvalMult(sum_cipher, masked_cipher);
     
@@ -1393,11 +1410,11 @@ Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputW
     }
 
     /*** STEP 4: Extract the values needed in the ciphertext */
-    Ctext strided_cipher = downsample(sum_cipher, inputWidth,  Stride);
+    Ctext strided_cipher = downsample(sum_cipher, inputWidth,  stride);
     channel_ciphers.push_back(strided_cipher);
     for(int i = 1; i<inputChannels; i++){
         sum_cipher = context->EvalRotate(sum_cipher, inputSize);
-        channel_ciphers.push_back(context->EvalRotate(downsample(sum_cipher, inputWidth, Stride), -i*outputSize));
+        channel_ciphers.push_back(context->EvalRotate(downsample(sum_cipher, inputWidth, stride), -i*outputSize));
     }
     Ctext finalResult = context->EvalAddMany(channel_ciphers);
     channel_ciphers.clear();
@@ -1418,7 +1435,7 @@ Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputW
  * @param inputWidth       Width of the input feature map (assumed square).
  * @param inputChannels    Number of input channels.
  * @param kernelWidth      Width of the pooling kernel (assumed square).
- * @param Stride        Stride length for the pooling operation.
+ * @param stride        stride length for the pooling operation.
  *
  * @return Ctext           Ciphertext representing the encrypted result 
  *                         of the optimized average pooling operation.
@@ -1431,9 +1448,9 @@ Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputW
  * @see he_avgpool__advanced()
  * @see generate_avgpool_optimized_rotation_positions()
  */
-Ctext FHEONANNController::he_avgpool_optimzed_with_multiple_channels(Ctext& encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int Stride){
+Ctext FHEONANNController::he_avgpool_optimzed_with_multiple_channels(Ctext& encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int stride){
 
-    int kernelSize = pow(kernelWidth, 2);
+    int kernelSq = pow(kernelWidth, 2);
     int inputSize = pow(inputWidth, 2);
     int encode_level = encryptedInput->GetLevel();
     
@@ -1448,7 +1465,7 @@ Ctext FHEONANNController::he_avgpool_optimzed_with_multiple_channels(Ctext& encr
 
     /*** STEP 3: Multiply the scale value with the sum cipher */
     int num_of_elements = inputChannels*inputSize;
-    auto masked_data = generate_scale_mask(kernelSize, num_of_elements);
+    auto masked_data = generate_scale_mask(kernelSq, num_of_elements);
     auto masked_cipher =  context->MakeCKKSPackedPlaintext(masked_data, 1, encode_level);
     sum_cipher = context->EvalMult(sum_cipher, masked_cipher);
     
@@ -1463,7 +1480,7 @@ Ctext FHEONANNController::he_avgpool_optimzed_with_multiple_channels(Ctext& encr
         return context->EvalMerge(channel_ciphers);
     }
 
-    Ctext finalResult = downsample_with_multiple_channels(sum_cipher, inputWidth, Stride, inputChannels);
+    Ctext finalResult = downsample_with_multiple_channels(sum_cipher, inputWidth, stride, inputChannels);
     return finalResult; 
 }
 
@@ -1676,6 +1693,8 @@ Ctext FHEONANNController::he_linear_optimized(Ctext& encryptedInput, vector<Ptex
 Ctext FHEONANNController::he_relu(Ctext& encryptedInput, double scaleValue,  int vectorSize, int polyDegree) {
     double lowerBound = -1;
     double upperBound = 1;
+
+    // scaleValue = 2*scaleValue;
     
     auto encryptInn = encryptedInput->Clone();
     if(scaleValue > 1){
@@ -1706,19 +1725,19 @@ Ctext FHEONANNController::he_relu(Ctext& encryptedInput, double scaleValue,  int
  * @param in_cipher    Encrypted input feature map (ciphertext).
  * @param inputWidth     Width of the input feature map (assumed square).
  * @param widthOut    Width of the output feature map after striding.
- * @param Stride    Stride length for the operation.
+ * @param stride    stride length for the operation.
  *
  * @return Ctext       Ciphertext representing the strided encrypted feature map.
  *
  * @see he_convolution()
  * @see he_convolution_advanced()
  */
-Ctext  FHEONANNController::basic_striding(Ctext in_cipher, int inputWidth, int widthOut,  int Stride){
+Ctext  FHEONANNController::basic_striding(Ctext in_cipher, int inputWidth, int widthOut,  int stride){
     
     auto in_digits = context->EvalFastRotationPrecompute(in_cipher);
     vector<Ctext> chan_vec(widthOut);
     vector<Ctext> rotated_ciphertexts(widthOut);
-    int i_rot = Stride*inputWidth;
+    int i_rot = stride*inputWidth;
     
     for (int k =0; k<widthOut; k++){
         if(k!=0){
@@ -1730,7 +1749,7 @@ Ctext  FHEONANNController::basic_striding(Ctext in_cipher, int inputWidth, int w
                 rotated_ciphertexts[t]= in_cipher;
             }
             else{
-                rotated_ciphertexts[t] = context->EvalFastRotation(in_cipher, t*Stride, context->GetCyclotomicOrder(), in_digits);
+                rotated_ciphertexts[t] = context->EvalFastRotation(in_cipher, t*stride, context->GetCyclotomicOrder(), in_digits);
             }
         }
         Ctext merged_cipher = context->EvalMerge(rotated_ciphertexts);
@@ -1746,11 +1765,11 @@ Ctext  FHEONANNController::basic_striding(Ctext in_cipher, int inputWidth, int w
 
 
 // Apply convolution with batch channel processing
-Ctext  FHEONANNController::batch_convolution_operation(const vector<Ctext>& rotatedInputs, const vector<Ptext>& kernelData, int kernelWidth, int inputSize,  int inputChannels) {
+Ctext  FHEONANNController::batch_convolution_operation(const vector<Ctext>& rotatedInputs, const vector<Ptext>& kernelData, int kernelSq, int inputSize,  int inputChannels) {
     
     // Apply kernel to each rotated cipher
-    vector<Ctext> kernelSum(kernelWidth);
-    for (int j = 0; j < kernelWidth; ++j) {
+    vector<Ctext> kernelSum(kernelSq);
+    for (int j = 0; j < kernelSq; ++j) {
         kernelSum[j] = context->EvalMult(rotatedInputs[j], kernelData[j]);
     }
     return context->EvalAddMany(kernelSum);
@@ -1766,7 +1785,7 @@ Ctext  FHEONANNController::batch_convolution_operation(const vector<Ctext>& rota
  *
  * @param input        Encrypted input feature map (ciphertext).
  * @param inputWidth   Width of the input feature map (assumed square).
- * @param stride       Stride length used for downsampling.
+ * @param stride       stride length used for downsampling.
  *
  * @return Ctext       Ciphertext representing the downsampled feature map
  *
@@ -1811,7 +1830,7 @@ Ctext FHEONANNController::downsample(const Ctext& input, int inputWidth, int str
  *
  * @param input        Encrypted input feature map (ciphertext).
  * @param inputWidth   Width of the input feature map (assumed square).
- * @param stride       Stride length used for downsampling.
+ * @param stride       stride length used for downsampling.
  * @param numChannels  Number of channels in the input feature map.
  *
  * @return Ctext       Ciphertext representing the downsampled feature map across all channels.
@@ -1864,6 +1883,20 @@ Ctext FHEONANNController::downsample_with_multiple_channels(const Ctext& input, 
         }
     }
 
+    /***
+    * step 3: process per channel
+    ******/ 
+    // int totalSize = numChannels * outputSize;
+    // Ctext downsampledchannels = encryptedzeros->Clone();
+    // for (int i = 0; i < numChannels; i++) {
+    //     Ctext masked = context->EvalMult(downsampledrows, gen_channel_full_mask(i, inputSize, outputSize, numChannels, downsampledrows->GetLevel()));
+    //     downsampledchannels = context->EvalAdd(downsampledchannels, masked);
+    //     downsampledchannels = context->EvalRotate(downsampledchannels, -(inputSize - outputSize));
+    // }
+
+    // downsampledchannels = context->EvalRotate(downsampledchannels, (inputSize - outputSize) * numChannels);
+    // downsampledchannels = context->EvalAdd(downsampledchannels, context->EvalRotate(downsampledchannels, -totalSize));
+
     return downsampledchannels;
 }
 
@@ -1872,7 +1905,7 @@ Ctext FHEONANNController::downsample_with_multiple_channels(const Ctext& input, 
  *
  * @param width Width of the input.
  * @param inputSize Total number of elements in the input.
- * @param stride Stride value for selecting elements.
+ * @param stride stride value for selecting elements.
  * @param level Encryption level for CKKS plaintext.
  * @return Packed plaintext mask with selected elements set to 1.
  */
@@ -1995,7 +2028,7 @@ Ptext FHEONANNController::generate_zero_mask_channels(int inputSize, int numChan
  *
  * @param inputWidth Width of each channel.
  * @param inputSize Total number of elements per channel.
- * @param stride Stride value for selecting elements.
+ * @param stride stride value for selecting elements.
  * @param numChannels Total number of channels.
  * @param level Encryption level for CKKS plaintext.
  * @return Packed plaintext mask with selected elements in all channels.

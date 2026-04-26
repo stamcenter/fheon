@@ -35,9 +35,10 @@
 #include <fstream>
 #include <filesystem> 
 #include <iostream>
+// #include <thread>
 namespace fs = std::filesystem;
 
- #include "FHEONHEController.h"
+#include "FHEONHEController.h"
 
 /**
  * @brief Compute the PQ value, which defines the application's security level.
@@ -58,6 +59,7 @@ double getlogPQ(const DCRTPoly& poly) {
     }
     return logPQ;
 }
+
 
 /**
  * @brief Generate the full FHE context for the project.
@@ -142,6 +144,12 @@ void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBo
         write_to_file(keys_folder + "/level_budget.txt", to_string(level_budget[0]) + "," + to_string(level_budget[1]));
         keys_serialization();
     }
+
+
+    #include <pthread.h>
+#include <sched.h>
+
+
     return;
 }
 
@@ -364,9 +372,9 @@ void FHEONHEController::load_context(bool verbose) {
  */
 void FHEONHEController::generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize) {
     
-    int numSlots = 1<<bootstrap_slots;
+    // int numSlots = 1<<bootstrap_slots;
     // context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
-    context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
+    // context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
     context->EvalMultKeyGen(keyPair.secretKey);
 
     if(serialize){
@@ -417,6 +425,7 @@ void FHEONHEController::generate_rotation_keys(const vector<int> rotations, std:
     }
 }
 
+
 /**
  * @brief Generate and serialize both rotation keys and bootstrapping keys for the FHE context.
  *
@@ -454,8 +463,9 @@ void FHEONHEController::generate_bootstrapping_and_rotation_keys(vector<int> rot
 void FHEONHEController::load_bootstrapping_and_rotation_keys(int bootstrap_slots, const string& filename, bool verbose) {
     if (verbose) cout << endl << "Loading bootstrapping and rotations keys from " << filename << "..." << endl;
 
-    int numSlots =  1<<bootstrap_slots;
+    int numSlots =  1 << bootstrap_slots;
     context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
+    context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
 
     if (verbose)  cout << "(1/4) Bootstrapping precomputations completed!" << endl;
     
@@ -559,6 +569,8 @@ void FHEONHEController::clear_context(int bootstrapping_key_slots) {
     else
         clear_rotation_keys();
 }
+
+
 /**
  * @brief Bootstrap a ciphertext to refresh its noise budget.
  *
@@ -576,6 +588,50 @@ Ctext FHEONHEController::bootstrap_function(Ctext& encryptedInput, int encode_le
     return boots_ciphertext;
 }
 
+/**
+ * @brief Bootstrap batched ciphertext to refresh the noise budget in all of them.
+ *
+ * This function applies bootstrapping to the input ciphertexts over the batch, effectively 
+ * reducing accumulated noise and enabling further homomorphic operations. 
+ * The bootstrapping level controls the depth and parameters used.
+ *
+ * @param encryptedInput  Ciphertext to be bootstrapped.
+ * @param encode_level    Bootstrapping level as defined in OpenFHE (e.g., 1 or 2).
+ *
+ * @return Refreshed ciphertext after bootstrapping.
+ */
+
+// vector<Ctext> FHEONHEController::batch_bootstrap_function(vector<Ctext>& encryptedInputs, int inputChannels, int encode_level){
+//     vector<Ctext> batch_ciphertexts(inputChannels);
+//     for(int b=0; b<inputChannels; b++){
+//         batch_ciphertexts[b] = context->EvalBootstrap(encryptedInputs[b], encode_level);
+//     }
+//     return batch_ciphertexts;
+// }
+
+vector<Ctext> FHEONHEController::batch_bootstrap_function(vector<Ctext>& encryptedInputs, int inputChannels, int encode_level) {
+    vector<Ctext> batch_ciphertexts(inputChannels);
+    int numThreads = min(inputChannels, (int)thread::hardware_concurrency());
+    vector<thread> threads(numThreads);
+
+    // Worker function for a range of channels
+    auto worker = [&](int start, int end) {
+        for (int b = start; b < end; b++) {
+            batch_ciphertexts[b] = context->EvalBootstrap(encryptedInputs[b], encode_level);
+        }
+    };
+
+    // Divide channels evenly among threads
+    int block = (inputChannels + numThreads - 1) / numThreads;
+    for (int t = 0; t < numThreads; t++) {
+        int start = t * block;
+        int end = min(start + block, inputChannels);
+        threads[t] = thread(worker, start, end);
+    }
+    for (auto &th : threads) th.join();
+
+    return batch_ciphertexts;
+}
 
 /**
  * @brief Encrypt a vector of input data into a packed ciphertext.
@@ -624,8 +680,10 @@ Ptext FHEONHEController::encode_input(vector<double>& inputData, int encode_leve
  *
  * @return Plaintext containing the encoded input data.
  */
+
 Ptext FHEONHEController::encode_input(vector<double>& inputData, int num_slots, int encode_level) {
-    Ptext plaintext = context->MakeCKKSPackedPlaintext(inputData, 1, encode_level, nullptr, num_slots);
+    int numElements = nextPowerOf2(num_slots);
+    Ptext plaintext = context->MakeCKKSPackedPlaintext(inputData, 1, encode_level, nullptr, numElements);
     return plaintext;
 }
 
@@ -1039,4 +1097,266 @@ vector<double> FHEONHEController::build_tiled_mask(int starting_padding, int end
         tiled_mask.insert(tiled_mask.end(), mask.begin(), mask.end());
     }
     return tiled_mask;
+}
+
+
+/**
+ * @brief Read the predicted label from encrypted inference data.
+ *
+ * This function decrypts and reads the predicted label from the given encrypted 
+ * inference data. The result can be written to an output file.
+ *
+ * @param inferencedData  Ciphertext containing the inference results.
+ * @param num_slots        Number of elements in the ciphertext.
+ * @param outFile          Output file stream to write the predicted label.
+ *
+ * @return The predicted label as an integer.
+ */
+vector<int> FHEONHEController::read_batch_inferenced_label(Ctext inferencedData,  int batchSize, int numClasses,  ofstream& outFile, int baseIndex){
+     int totalElements = batchSize * numClasses;
+
+    // Decrypt
+    auto decryptedVal = decrypt_data(inferencedData, totalElements);
+    auto decryptedVec = decryptedVal->GetRealPackedValue();
+    cout << "DecryptedVec: " << decryptedVec << endl;
+
+    vector<int> predictedLabels(batchSize);
+
+    // Process each batch separately
+    for (int b = 0; b < batchSize; b++) {
+        int startIdx = b * numClasses;
+        int endIdx   = startIdx + (numClasses-1);
+
+        // Find max in this batch slice
+        
+        auto maxIt = max_element(
+            decryptedVec.begin() + startIdx, 
+            decryptedVec.begin() + endIdx
+        );
+        int label = distance(decryptedVec.begin() + startIdx, maxIt);
+        
+        // cout << "startIdx: " << startIdx
+        //     << "  endIdx: " << endIdx
+        //     << "  Elements: [ ";
+        // for (int i = startIdx; i < endIdx; i++) {
+        //     cout << decryptedVec[i] << " ";
+        // }
+        // cout << "]\n";
+
+        predictedLabels[b] = label;
+
+        cout << "Batch " << baseIndex+b 
+             << " -> Predicted Label: " << label 
+             << " (Score: " << *maxIt << ")" << endl;
+
+        if (outFile.is_open()) {
+            outFile << label << endl;
+        }
+    }
+
+    return predictedLabels;
+}
+
+
+vector<int> FHEONHEController::read_batch_inferenced_label_multiple_outputs(vector<Ctext> inferencedData,  int batchSize, int numClasses,  ofstream& outFile, int baseIndex){
+    
+    vector<int> predictedLabels(batchSize);
+    // Process each batch separately
+    for (int b = 0; b < batchSize; b++) {
+        auto decryptedVal = decrypt_data(inferencedData[b], numClasses);
+        auto decryptedVec = decryptedVal->GetRealPackedValue();
+        int startIdx = 0;
+        int endIdx   = startIdx + (numClasses-1);
+
+        // Find max in this batch slice
+        auto maxIt = max_element(
+            decryptedVec.begin() + startIdx, 
+            decryptedVec.begin() + endIdx
+        );
+        int label = distance(decryptedVec.begin() + startIdx, maxIt);
+        predictedLabels[b] = label;
+
+        cout << "Batch " << baseIndex+b 
+             << " -> Predicted Label: " << label 
+             << " (Score: " << *maxIt << ")" << endl;
+
+        if (outFile.is_open()) {
+            outFile << label << endl;
+        }
+    }
+    return predictedLabels;
+}
+
+
+vector<int> FHEONHEController::read_batch_scaling_values(vector<Ctext>& encryptedInputs, int inputChannels, int num_slots){
+    vector<int> maxVec;
+    for(int i=0; i<inputChannels; i++){
+        auto decryptedVal = decrypt_data(encryptedInputs[i], num_slots);
+        auto decryptedVec = decryptedVal->GetRealPackedValue();
+        double maxAbsVal = *std::max_element(decryptedVec.begin(), decryptedVec.end(), [](int a, int b) {
+            return std::abs(a) < std::abs(b);
+        });
+        int roundedMax = static_cast<int>(std::ceil(std::abs(maxAbsVal)));
+        maxVec.push_back(roundedMax);
+    }
+    return maxVec;
+}
+
+int FHEONHEController::read_batch_minmax(vector<Ctext>& encryptedInputs, int inputChannels,  int num_slots) {
+    
+    vector<int> maxVec;
+    for(int i=0; i<inputChannels; i++){
+        auto decryptedVal = decrypt_data(encryptedInputs[i], num_slots);
+        auto decryptedVec = decryptedVal->GetRealPackedValue();
+
+        auto maxElementIt = max_element(decryptedVec.begin(), decryptedVec.end());
+        int maxIndex = distance(decryptedVec.begin(), maxElementIt);
+        auto minElementIt = min_element(decryptedVec.begin(), decryptedVec.end());
+        int minIndex = distance(decryptedVec.begin(), minElementIt);
+        cout << "------------------------------------------------------------------ " << endl;
+        cout << "Range [ " << decryptedVec[minIndex] << " , " << decryptedVec[maxIndex] <<" ]" << endl;
+        cout << "Index: " << maxIndex << endl;
+        cout << "------------------------------------------------------------------ " << endl;
+    }
+    return 0;
+}
+
+/**
+ * @brief Decrypts and prints a batch of encrypted inputs.
+ *
+ * This function iterates through a vector of ciphertexts, decrypts each
+ * encrypted input using the internally stored secret key, and prints
+ * the real packed values to stdout.
+ *
+ * @param encryptedInputs Vector of encrypted ciphertext inputs.
+ * @param inputChannels Number of encrypted inputs (channels) to decrypt.
+ * @param num_slots Number of CKKS slots to decode.
+ *
+ * @return Returns 0 on successful execution.
+ */
+int FHEONHEController::decrypt_batch_data(vector<Ctext>& encryptedInputs, int inputChannels,  int num_slots) {
+    
+    vector<int> maxVec;
+    for(int i=0; i<inputChannels; i++){
+        auto decryptedVal = decrypt_data(encryptedInputs[i], num_slots);
+        auto decryptedVec = decryptedVal->GetRealPackedValue();
+        cout << "------------------------------------------------------------------ " << endl;
+        cout << decryptedVec << endl;
+        cout << "------------------------------------------------------------------ " << endl;
+    }
+    return 0;
+}
+
+
+/**
+ * @brief Decrypts a packed CKKS ciphertext and prints the result.
+ *
+ * This function decrypts the provided ciphertext using the controller's
+ * secret key, sets the plaintext length to the specified number of slots,
+ * extracts the complex CKKS packed values, and prints them.
+ *
+ * @param encryptedpackedVector Encrypted CKKS ciphertext.
+ * @param num_slots Number of slots to extract from the decrypted plaintext.
+ */
+void FHEONHEController::decrypt_and_print(Ctext encryptedpackedVector, int num_slots) {
+    
+    Ptext plaintextDec;
+    context->Decrypt(keyPair.secretKey, encryptedpackedVector, &plaintextDec);
+    plaintextDec->SetLength(num_slots);
+    vector<complex<double>> finalResult = plaintextDec->GetCKKSPackedValue();
+    cout << finalResult << endl;
+    cout << endl;
+}
+
+/**
+ * @brief Decrypts ciphertext using a provided private key.
+ *
+ * This function decrypts the given ciphertext using the specified secret key,
+ * sets the plaintext length, and returns the decrypted plaintext object.
+ *
+ * @param sk Private key used for decryption.
+ * @param encryptedinputData Ciphertext to decrypt.
+ * @param cols Number of plaintext slots to retain.
+ *
+ * @return Decrypted plaintext (Ptext).
+ */
+Ptext FHEONHEController::decrypt_data_with_key(PrivateKey<DCRTPoly> &sk,
+                                               Ctext encryptedinputData,
+                                               int cols) {
+
+    Ptext plaintextDec;
+    context->Decrypt(sk, encryptedinputData, &plaintextDec);
+    plaintextDec->SetLength(cols);
+    return plaintextDec;
+}
+
+/**
+ * @brief Reads and computes the scaling value from decrypted inference data.
+ *
+ * This function decrypts inference output, retrieves the real packed values,
+ * and computes the maximum absolute value across all slots. The result is
+ * rounded up to the nearest integer and returned as the scaling factor.
+ *
+ * @param sk Private key used for decryption.
+ * @param inferencedData Encrypted inference output.
+ * @param num_slots Number of slots to decode.
+ *
+ * @return Integer representing the ceiling of the maximum absolute value.
+ */
+int FHEONHEController::read_scaling_value_with_key(PrivateKey<DCRTPoly> &sk,
+                                                   Ctext inferencedData,
+                                                   int num_slots) {
+    // int roundedMaxAbsValue = 10; // Temporary hardcoded value for testing
+    auto decryptedValue = decrypt_data_with_key(sk, inferencedData, num_slots);
+    auto decryptedVector = decryptedValue->GetRealPackedValue();
+
+    cout << endl
+        << "--------------------------------------------------- " << endl
+        << endl;
+    cout << "Decrypted Vector for Scaling Value: " << decryptedVector << endl;
+    cout << endl
+        << "--------------------------------------------------- " << endl;
+
+    double maxAbsValue =
+        *std::max_element(decryptedVector.begin(), decryptedVector.end(),
+                            [](int a, int b) { return std::abs(a) < std::abs(b); });
+    int roundedMaxAbsValue = static_cast<int>(std::ceil(std::abs(maxAbsValue)));
+    return roundedMaxAbsValue;
+}
+
+
+/**
+ * @brief Decrypts inference output and determines the predicted label.
+ *
+ * This function decrypts the inference ciphertext, extracts the real packed
+ * values, determines the index of the maximum value (argmax), and prints the
+ * predicted label and its corresponding weight. If the output file stream is
+ * open, the predicted label is written to the file.
+ *
+ * @param sk Private key used for decryption.
+ * @param inferencedData Encrypted inference result.
+ * @param num_slots Number of slots to decode.
+ * @param outFile Output file stream to write predicted label.
+ *
+ * @return Index corresponding to the predicted label.
+ */
+int FHEONHEController::read_inferenced_label_with_key(PrivateKey<DCRTPoly> &sk,
+                                                      Ctext inferencedData,
+                                                      int num_slots,
+                                                      ofstream &outFile) {
+    auto decryptedValue = decrypt_data_with_key(sk, inferencedData, num_slots);
+    auto decryptedVector = decryptedValue->GetRealPackedValue();
+    auto maxElementIt =
+        max_element(decryptedVector.begin(), decryptedVector.end());
+    int maxIndex = distance(decryptedVector.begin(), maxElementIt);
+    cout << "Predicted Value : " << maxIndex
+        << " Weight:  " << decryptedVector[maxIndex] << endl;
+    cout << "Decrypted Vector: " << decryptedVector << endl;
+
+    if (outFile.is_open()) {
+        outFile << maxIndex << endl;
+    } else {
+        cout << "Unable to open file." << endl;
+    }
+    return maxIndex;
 }

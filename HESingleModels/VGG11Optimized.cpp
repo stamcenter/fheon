@@ -27,8 +27,10 @@
 #include <iostream>
 #include <sys/stat.h>
 
-#include "./../src/FHEONHEController.h"
-#include "../src/FHEONANNController.h"
+#include "FHEONHEController.h"
+#include "FHEONANNController.h"
+
+using namespace std;
 
 #ifndef DEFAULT_ARG
 #define DEFAULT_ARG 100
@@ -44,6 +46,7 @@ Ctext FClayer_relu_block(FHEONHEController &fheonHEController, FHEONANNControlle
 
 vector<int> measuringTime;
 auto startIn = get_current_time();
+vector<int> slotsValues = {14, 14, 14, 14, 14, 14};
 
 int main(int argc, char *argv[]) {
 
@@ -84,13 +87,14 @@ int main(int argc, char *argv[]) {
     
     //** generate rotation keys for conv_layer 1 */
     auto conv1_keys = fheonANNController.generate_optimized_convolution_rotation_positions(dataWidth, img_depth, channelValues[0], striding);
-    auto avgpool1_keys = fheonANNController.generate_avgpool_optimized_rotation_positions(dataWidth,  channelValues[0], avgpoolSize, avgpoolSize);
+    auto avgpool1_keys = fheonANNController.generate_avgpool_optimized_rotation_positions(dataWidth, channelValues[0], avgpoolSize, avgpoolSize);
     dataWidth = dataWidth/2;
 
     auto conv2_keys = fheonANNController.generate_optimized_convolution_rotation_positions(dataWidth, channelValues[0], channelValues[1], striding);
-    auto avgpool2_keys = fheonANNController.generate_avgpool_optimized_rotation_positions(dataWidth, channelValues[1], avgpoolSize, avgpoolSize);
+    auto avgpool2_keys = fheonANNController.generate_avgpool_optimized_rotation_positions(dataWidth,  channelValues[1], avgpoolSize, avgpoolSize);
     dataWidth = dataWidth/2;
 
+    // auto conv3_keys = fheonANNController.generate_optimized_convolution_rotation_positions(dataWidth,  channelValues[1], channelValues[2],  striding);
     auto conv3_keys = fheonANNController.generate_optimized_convolution_rotation_positions(dataWidth,  channelValues[1], channelValues[2],  striding);
     auto conv4_keys = fheonANNController.generate_optimized_convolution_rotation_positions(dataWidth, channelValues[2], channelValues[2], striding);
     auto avgpool3_keys = fheonANNController.generate_avgpool_optimized_rotation_positions(dataWidth, channelValues[2], avgpoolSize, avgpoolSize);
@@ -103,46 +107,73 @@ int main(int argc, char *argv[]) {
 
     auto conv7_keys = fheonANNController.generate_optimized_convolution_rotation_positions(dataWidth, channelValues[3], channelValues[3], striding);
     auto conv8_keys = fheonANNController.generate_optimized_convolution_rotation_positions(dataWidth, channelValues[3], channelValues[3], striding);
-    auto avgpool5_keys = fheonANNController.generate_avgpool_optimized_rotation_positions(dataWidth,  channelValues[3], avgpoolSize,  avgpoolSize, true, "multi_channels", rotPositions);
+    
+    auto avgpool5_keys = fheonANNController.generate_avgpool_optimized_rotation_positions(dataWidth, channelValues[3],  avgpoolSize,  avgpoolSize, true, "multi_channels", rotPositions);
 
     /** Generate Fully Connected Keys */
     auto fc_keys = fheonANNController.generate_linear_rotation_positions(channelValues[4], rotPositions);
+    fc_keys.push_back(channelValues[2]);
+    fc_keys.push_back(channelValues[3]);
+    fc_keys.push_back(channelValues[4]);
     /************************************************************************************************ */
-    vector<vector<int>> rotation_keys;
-    rotation_keys.push_back(conv1_keys);
-    rotation_keys.push_back(conv2_keys);
-    rotation_keys.push_back(conv3_keys);
-    rotation_keys.push_back(conv4_keys);
-    rotation_keys.push_back(conv5_keys);
-    rotation_keys.push_back(conv6_keys);
-    rotation_keys.push_back(conv7_keys);
-    rotation_keys.push_back(conv8_keys);
-    rotation_keys.push_back(avgpool1_keys);
-    rotation_keys.push_back(avgpool2_keys);
-    rotation_keys.push_back(avgpool3_keys);
-    rotation_keys.push_back(avgpool4_keys);
-    rotation_keys.push_back(avgpool5_keys);
-    rotation_keys.push_back(fc_keys);
+    vector<vector<int>> rkeys_layer1, rkeys_layer2, rkeys_layer3, rkeys_layer4, rkeys_layer5,  fc_layer;
+    
+    rkeys_layer1.push_back(conv1_keys);
+    rkeys_layer1.push_back(avgpool1_keys);
 
-     /*** join all keys and generate unique values only */
-    vector<int> rotation_positions;
-    for (const auto& vec : rotation_keys) {
-        rotation_positions.insert(rotation_positions.end(), vec.begin(), vec.end());
-    }
+    rkeys_layer2.push_back(conv2_keys);
+    rkeys_layer2.push_back(avgpool2_keys);
 
-    std::sort(rotation_positions.begin(), rotation_positions.end());
-    auto new_end = std::remove(rotation_positions.begin(), rotation_positions.end(), 0);
-    new_end = std::unique(rotation_positions.begin(), rotation_positions.end());
-    unique(rotation_positions.begin(), rotation_positions.end());
-    rotation_positions.erase(new_end, rotation_positions.end());
-    std::sort(rotation_positions.begin(), rotation_positions.end());
+    rkeys_layer3.push_back(conv3_keys);
+    rkeys_layer3.push_back(conv4_keys);
+    rkeys_layer3.push_back(avgpool3_keys);
 
-    /*********************************************** Key Generation ******************************************************************************/
+    rkeys_layer4.push_back(conv5_keys);
+    rkeys_layer4.push_back(conv6_keys);
+    rkeys_layer4.push_back(avgpool4_keys);
+
+    rkeys_layer5.push_back(conv7_keys);
+    rkeys_layer5.push_back(conv8_keys);
+    rkeys_layer5.push_back(avgpool5_keys);
+    fc_layer.push_back(fc_keys);
+
+    /********************************************************************************************************************************************/
+    /*** join all keys and generate unique values only */
+    vector<int> serkeys_layer1 = serialize_rotation_keys(rkeys_layer1); 
+    vector<int> serkeys_layer2 = serialize_rotation_keys(rkeys_layer2);
+    vector<int> serkeys_layer3 = serialize_rotation_keys(rkeys_layer3);
+    vector<int> serkeys_layer4 = serialize_rotation_keys(rkeys_layer4);
+    vector<int> serkeys_layer5 = serialize_rotation_keys(rkeys_layer5);
+    vector<int> serkeys_fc_layer = serialize_rotation_keys(fc_layer);
+    // /*********************************************** Key Generation ******************************************************************************/
     auto begin_rotkeygenerate_time = startTime();
-    cout << "This is the rotation positions keys ("<< rotation_positions.size() << "): " << rotation_positions << endl;
-    fheonHEController.generate_rotation_keys(rotation_positions, "rotation_keys.bin", true);
-    printDuration(begin_rotkeygenerate_time, "Rotation KeyGen (position, gen, and load) Time", false);
-    // fheonHEController.load_rotation_keys("rotation_keys.bin");
+    // cout << "This is the rotation positions (" << serkeys_block1.size() <<"+" << serkeys_block2.size() << "+" << serkeys_block3.size() << " = " << total_rkeys << "): " << endl;
+    cout << "Layer 1 keys (" << serkeys_layer1.size() << ") " << serkeys_layer1 << endl;
+    cout << "Layer 2 keys (" << serkeys_layer2.size() << ") " << serkeys_layer2 << endl;
+    cout << "Layer 3 keys (" << serkeys_layer3.size() << ") " << serkeys_layer3 << endl;
+    cout << "Layer 4 keys (" << serkeys_layer4.size() << ") " << serkeys_layer4 << endl;
+    cout << "Layer 5 keys (" << serkeys_layer5.size() << ") " << serkeys_layer5 << endl;
+    cout << "FC keys (" << serkeys_fc_layer.size() << ") " << serkeys_fc_layer << endl;
+
+    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_layer1, slotsValues[0], "layer1.bin", true);
+    fheonHEController.clear_context(slotsValues[0]);
+    
+    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_layer2, slotsValues[1], "layer2.bin", true);
+    fheonHEController.clear_context(slotsValues[1]);
+    
+    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_layer3, slotsValues[2], "layer3.bin", true);
+    fheonHEController.clear_context(slotsValues[2]);
+
+    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_layer4, slotsValues[3], "layer4.bin", true);
+    fheonHEController.clear_context(slotsValues[3]);
+
+    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_layer5, slotsValues[4], "layer5.bin", true);
+    fheonHEController.clear_context(slotsValues[4]);
+
+    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_fc_layer, slotsValues[5], "fc_layer.bin",  true);
+    fheonHEController.clear_context(slotsValues[5]);
+
+    printDuration(begin_rotkeygenerate_time, "Rotation KeyGen Time", false);
     /********************************************************************************************************************************************/
    
     int reluScale = 10;
@@ -154,8 +185,11 @@ int main(int argc, char *argv[]) {
         Ctext encryptedImage = fheonHEController.encrypt_input(image);
         cout << endl << imageIndex+1 << " - image Read, Normalized and Encrypted with " << image.size() << " Elements" << endl;
         /************************************************************************************************ */
+        
         auto inference_time = startTime();
         // cout<< "Layer 1" << endl;
+        fheonHEController.clear_context(slotsValues[5]);
+        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[0], "layer1.bin",  false);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv1", encryptedImage, dataWidth, dataSize, kernelWidth, padding, striding, img_depth, channelValues[0], reluScale, false);
         startIn = get_current_time();
         convData = fheonANNController.he_avgpool_optimzed_with_multiple_channels(convData, dataWidth,  channelValues[0], avgpoolSize, avgpoolSize);
@@ -164,9 +198,12 @@ int main(int argc, char *argv[]) {
         dataSize = channelValues[0]*pow(dataWidth, 2);
         // fheonHEController.read_minmax(convData, dataSize);
         // printDuration(inference_time, "avgpool1", false);
+
+        fheonHEController.clear_context(slotsValues[0]);
+        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[1], "layer2.bin", false);
         
         // cout<< "Layer 2" << endl;
-        convData = convolution_relu_block(fheonHEController, fheonANNController, "conv2", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[0], channelValues[1], reluScale, true);
+        convData = convolution_relu_block(fheonHEController, fheonANNController, "conv2", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[0], channelValues[1], reluScale, false);
         convData = fheonHEController.bootstrap_function(convData);
         startIn = get_current_time();
         convData = fheonANNController.he_avgpool_optimzed_with_multiple_channels(convData, dataWidth,  channelValues[1], avgpoolSize, avgpoolSize);
@@ -175,7 +212,10 @@ int main(int argc, char *argv[]) {
         dataSize = channelValues[1]*pow(dataWidth, 2);
         // fheonHEController.read_minmax(convData, dataSize);
         // printDuration(inference_time, "avgpool2", false);
-    
+
+        fheonHEController.clear_context(slotsValues[1]);
+        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[2], "layer3.bin", false);
+        
         // cout<< "Layer 3" << endl;
         convData = convolution_relu_block(fheonHEController, fheonANNController,  "conv3", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[1], channelValues[2], reluScale);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv4", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[2], channelValues[2], reluScale);
@@ -187,6 +227,9 @@ int main(int argc, char *argv[]) {
         dataSize = channelValues[2]*pow(dataWidth, 2);
         // fheonHEController.read_minmax(convData, dataSize);
         // printDuration(inference_time, "avgpool3", false);
+
+        fheonHEController.clear_context(slotsValues[2]);
+        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[3], "layer4.bin", false);
         
         // cout<< "Layer 4" << endl;
         convData = convolution_relu_block(fheonHEController, fheonANNController,   "conv5",  convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[2], channelValues[3], reluScale);
@@ -196,9 +239,12 @@ int main(int argc, char *argv[]) {
         convData = fheonANNController.he_avgpool_optimzed_with_multiple_channels(convData, dataWidth,  channelValues[3], avgpoolSize, avgpoolSize);
         measuringTime.push_back(measureTime(startIn, get_current_time()));
         dataWidth = dataWidth/2;
-        dataSize = channelValues[3]*pow(dataWidth, 2);
+        dataSize = channelValues[3]* pow(dataWidth, 2);
         // fheonHEController.read_minmax(convData, dataSize);
         // printDuration(inference_time, "avgpool4", false);
+
+        fheonHEController.clear_context(slotsValues[3]);
+        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[4], "layer5.bin", false);
         
         // cout<< "Layer 5" << endl;
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv7", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[3], channelValues[3], reluScale);
@@ -207,12 +253,15 @@ int main(int argc, char *argv[]) {
         startIn = get_current_time();
         convData = fheonANNController.he_globalavgpool(convData, dataWidth,  channelValues[3], avgpoolSize, rotPositions);
         measuringTime.push_back(measureTime(startIn, get_current_time()));
-        // dataWidth = dataWidth/2;
-        // dataSize = channelValues[3]* pow(dataWidth, 2);
+        dataWidth = dataWidth/2;
+        dataSize = channelValues[3]* pow(dataWidth, 2);
         // fheonHEController.read_minmax(convData, dataSize);
         // printDuration(inference_time, "avgpool5", false);
+
+        fheonHEController.clear_context(slotsValues[4]);
+        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[5], "fc_layer.bin", false);
         
-        // cout << "FC" << endl;
+        cout << "FC" << endl;
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc1", convData, channelValues[3], channelValues[4], reluScale, rotPositions);
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc2", convData, channelValues[4], channelValues[4], reluScale, rotPositions);
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc3", convData, channelValues[4], channelValues[5], 0, rotPositions);
@@ -235,36 +284,42 @@ Ctext convolution_relu_block(FHEONHEController &fheonHEController, FHEONANNContr
                                 int striding, int inputChannels, int outputChannels, int reluScale, bool bootstrapState){
     string dataPath = "./../weights/vgg11/"+layer;
     auto biasVector = load_bias(dataPath+"_bias.csv");
-    auto rawKernel = load_weights(dataPath+"_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
+    auto rawKernelData = load_weights(dataPath+"_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
     
     int inputSize = pow(dataWidth, 2);
     vector<vector<Ptext>> kernelData;
+    int encoded_level = encrytedVector->GetLevel();
     for(int i=0; i<outputChannels; i++){
-        auto encodeKernel = fheonHEController.encode_kernel_optimized(rawKernel[i], inputSize);
+        auto encodeKernel = fheonHEController.encode_kernel_optimized(rawKernelData[i], inputSize, encoded_level);
         kernelData.push_back(encodeKernel);
     }
-    rawKernel.clear();
-    rawKernel.shrink_to_fit();
+    rawKernelData.clear();
+    rawKernelData.shrink_to_fit();
 
     if(bootstrapState){
         encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
     }
-    auto convbiasEncoded = fheonHEController.encode_bais_input(biasVector, inputSize);
+    auto convbiasEncoded = fheonHEController.encode_bais_input(biasVector, inputSize, encoded_level);
 
     startIn = get_current_time();
     auto conv_data = fheonANNController.he_convolution_optimized(encrytedVector, kernelData, convbiasEncoded, dataWidth, inputChannels, outputChannels);
     measuringTime.push_back(measureTime(startIn, get_current_time()));
     // dataWidth = (((dataWidth) + (2*padding) - (kernelWidth - 1) - 1)/striding)+1;
     dataSize = (outputChannels*pow(dataWidth, 2));
-
+    
     /** Temporal relu scale for max accuracy */
     reluScale = fheonHEController.read_scaling_value(conv_data, dataSize);
+    // cout <<"reluScale: " << reluScale << " dataSize: " << dataSize << endl;
+
+    if(bootstrapState){
+        conv_data = fheonHEController.bootstrap_function(conv_data);
+    }
 
     startIn = get_current_time();
     conv_data = fheonANNController.he_relu(conv_data, reluScale, dataSize);
     measuringTime.push_back(measureTime(startIn, get_current_time()));
-
     // fheonHEController.read_minmax(conv_data, dataSize);
+
     kernelData.clear();
     kernelData.shrink_to_fit();
     biasVector.clear();
@@ -274,14 +329,17 @@ Ctext convolution_relu_block(FHEONHEController &fheonHEController, FHEONANNContr
 Ctext FClayer_relu_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int inputChannels, int outputChannels, int reluScale, int rotPosition){
     string dataPath = "./../weights/vgg11/"+layer;
     auto fc_biasVector = load_bias(dataPath+"_bias.csv");
-    auto fc_rawKernel = load_fc_weights(dataPath+"_weight.csv", outputChannels, inputChannels);
+    auto fc_rawKernelData = load_fc_weights(dataPath+"_weight.csv", outputChannels, inputChannels);
     vector<Ptext> fc_kernelData;
+    int encoded_level = encrytedVector->GetLevel();
+    int num_elements = nextPowerOf2(fc_rawKernelData[0].size());
     for(int i=0; i < outputChannels; i++){
-        auto encodeWeights = fheonHEController.encode_input(fc_rawKernel[i]);
+        auto encodeWeights = fheonHEController.encode_input(fc_rawKernelData[i], num_elements, encoded_level);
         fc_kernelData.push_back(encodeWeights);
     }
 
-    Ptext fcbaisVector = context->MakeCKKSPackedPlaintext(fc_biasVector, 1);
+    num_elements = nextPowerOf2(fc_biasVector.size());
+    Ptext fcbaisVector = context->MakeCKKSPackedPlaintext(fc_biasVector, 1, encoded_level, nullptr, num_elements);
     encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
 
     startIn = get_current_time();

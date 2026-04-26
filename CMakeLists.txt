@@ -20,20 +20,30 @@ endif ()
 
 set(CMAKE_CXX_FLAGS ${OpenFHE_CXX_FLAGS})
 
-include_directories(${OPENMP_INCLUDES})
-include_directories(${OpenFHE_INCLUDE})
-include_directories(${OpenFHE_INCLUDE}/third-party/include)
-include_directories(${OpenFHE_INCLUDE}/core)
-include_directories(${OpenFHE_INCLUDE}/pke)
-include_directories(${OpenFHE_INCLUDE}/binfhe)
+# Grouping include directories
+include_directories(
+    ${OPENMP_INCLUDES}
+    ${OpenFHE_INCLUDE}
+    ${OpenFHE_INCLUDE}/third-party/include
+    ${OpenFHE_INCLUDE}/core
+    ${OpenFHE_INCLUDE}/pke
+    ${OpenFHE_INCLUDE}/binfhe
+)
 
-link_directories(${OpenFHE_LIBDIR})
-link_directories(${OPENMP_LIBRARIES})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# Grouping link directories
+link_directories(
+    ${OpenFHE_LIBDIR}
+    ${OPENMP_LIBRARIES}
+)
+
+# Setting compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lstdc++fs")
 endif()
 
+# Handling static vs shared library linking
 if(BUILD_STATIC)
     set(CMAKE_EXE_LINKER_FLAGS "${OpenFHE_EXE_LINKER_FLAGS} -static")
     link_libraries(${OpenFHE_STATIC_LIBRARIES} stdc++fs)
@@ -42,99 +52,78 @@ else()
     link_libraries(${OpenFHE_SHARED_LIBRARIES} stdc++fs)
 endif()
 
-# Test Models
-add_executable(lenet5
-        HEmodels/LeNet5.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(lenet5 PRIVATE DEFAULT_ARG=100)
+# Optional HEXL support
+if(TARGET HEXL::hexl)
+    message(STATUS "HEXL found, linking HEXL::hexl")
+    link_libraries(HEXL::hexl)
+endif()
 
-add_executable(resnet20Basic
-        HEmodels/ResNet20Basic.cpp
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(resnet20Basic PRIVATE DEFAULT_ARG=100)
+################################################################################
+############################## SINGLE INPUT MODELS #############################
+################################################################################
 
-add_executable(resnet20DataPreprocessed
-        HEmodels/ResNet20DataPreprocessed.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
+# Grouping HESingleModels source files
+set(HESingleModels_SOURCES
+    LeNet5.cpp
+    ResNet20Basic.cpp
+    ResNet20DataPreprocessed.cpp
+    ResNet20MultiChannels.cpp
+    ResNet20MultiChansAndSlots.cpp
+    ResNet20Optimized.cpp
+    ResNet34.cpp
+    ResNet34Optimized.cpp
+    VGG11.cpp
+    VGG11Optimized.cpp
+    VGG16.cpp
+    VGG16Optimized.cpp
 )
-target_compile_definitions(resnet20DataPreprocessed PRIVATE DEFAULT_ARG=100)
 
-add_executable(resnet20MultiChannels
-        HEmodels/ResNet20MultiChannels.cpp
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(resnet20MultiChannels PRIVATE DEFAULT_ARG=100)
+foreach(model ${HESingleModels_SOURCES})
+    string(REPLACE ".cpp" "" model_name ${model})
+    add_executable(${model_name}
+        HESingleModels/${model}
+        include/Utils.h include/UtilsData.h
+        include/FHEONHEController.h src/FHEONHEController.cpp
+        include/FHEONANNController.h src/FHEONANNController.cpp
+    )
+    target_compile_definitions(${model_name} PRIVATE DEFAULT_ARG=10)
+endforeach()
 
-add_executable(resnet20MultiChannelsAndSlots
-        HEmodels/ResNet20MultiChansAndSlots.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(resnet20MultiChannelsAndSlots PRIVATE DEFAULT_ARG=100)
 
-add_executable(resnet20Optimized
-        HEmodels/ResNet20Optimized.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(resnet20Optimized PRIVATE DEFAULT_ARG=250)
+###############################################################################
+############################# BATCH MODELS ####################################
+###############################################################################
 
-add_executable(resnet34
-        HEmodels/ResNet34.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
+# Grouping HEBatchModels source files
+set(HEBatchModels_SOURCES
+    TResNet20N16.cpp
+    TResNet20N64.cpp
+    TResNet20N256.cpp
+    TResNet20N32.cpp
+    TResNet20N128.cpp
+    TResNet20N512.cpp
+    TResNet34N16.cpp
+    TResNet34N64.cpp
+    TResNet34N128.cpp
+    TResNet34N32.cpp
+    TResNet34N128P2.cpp
+    TResNet34N256.cpp
+    TResNet20N64JoinedKeys.cpp
+    TResNet20N256JoinedKeys.cpp
+    TResNet34N16JoinedKeys.cpp
 )
-target_compile_definitions(resnet34 PRIVATE DEFAULT_ARG=100)
 
-add_executable(resnet34Optimized
-        HEmodels/ResNet34Optimized.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(resnet34Optimized PRIVATE DEFAULT_ARG=100)
-
-add_executable(vgg11
-        HEmodels/VGG11.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(vgg11 PRIVATE DEFAULT_ARG=100)
-
-add_executable(vgg11Optimized
-        HEmodels/VGG11Optimized.cpp 
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(vgg11Optimized PRIVATE DEFAULT_ARG=100)
-
-add_executable(vgg16
-        HEmodels/VGG16.cpp
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-)
-target_compile_definitions(vgg16 PRIVATE DEFAULT_ARG=100)
-
-add_executable(vgg16Optimized
-        src/Utils.h src/UtilsData.h 
-        src/FHEONHEController.h src/FHEONHEController.cpp 
-        src/FHEONANNController.h src/FHEONANNController.cpp
-        HEmodels/VGG16Optimized.cpp 
-)
-target_compile_definitions(vgg16Optimized PRIVATE DEFAULT_ARG=100)
+foreach(model ${HEBatchModels_SOURCES})
+    string(REPLACE ".cpp" "" model_name ${model})
+    add_executable(${model_name}
+        HEBatchModels/${model}
+        include/Utils.h include/UtilsData.h
+        include/FHEONHEController.h src/FHEONHEController.cpp
+        include/FHEONANNController.h src/FHEONANNController.cpp
+        include/FHEONANNBatchController.h src/FHEONANNBatchController.cpp
+    )
+    if(model_name MATCHES "N16|N64|N128|N256|N512")
+        string(REGEX MATCH "[0-9]+" batch_size ${model_name})
+        target_compile_definitions(${model_name} PRIVATE DEFAULT_ARG=${batch_size})
+    endif()
+endforeach()

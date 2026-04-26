@@ -27,8 +27,8 @@
 #include <iostream>
 #include <sys/stat.h>
 
-#include "../src/FHEONHEController.h"
-#include "../src/FHEONANNController.h"
+#include "FHEONHEController.h"
+#include "FHEONANNController.h"
 
 using namespace std;
 CryptoContext<DCRTPoly> context;
@@ -193,11 +193,11 @@ Ctext shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNC
     string dataPath = "./../weights/resnet20/"+layer;
 
     auto biasVector = load_bias(dataPath+"_bias.csv");
-    auto  rawKernel = load_fc_weights(dataPath+"_weight.csv",  outputChannels, inputChannels);
+    auto  rawKernelData = load_fc_weights(dataPath+"_weight.csv",  outputChannels, inputChannels);
     int width_sq = pow(dataWidth, 2);
     vector<Ptext> kernelData;
     for(int i=0; i < outputChannels; i++){
-        auto encodeWeights = fheonHEController.encode_shortcut_kernel(rawKernel[i], width_sq);
+        auto encodeWeights = fheonHEController.encode_shortcut_kernel(rawKernelData[i], width_sq);
         kernelData.push_back(encodeWeights);
     }
     auto biasVectorEncoded = fheonHEController.encode_bais_input(biasVector, width_sq);
@@ -216,12 +216,12 @@ Ctext convolution_block(FHEONHEController &fheonHEController, FHEONANNController
                                 int striding, int inputChannels, int outputChannels, int reluScale, bool bootstrapState){
     string dataPath = "./../weights/resnet20/"+layer;
     auto biasVector = load_bias(dataPath+"_bias.csv");
-    auto rawKernel = load_weights(dataPath+"_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
+    auto rawKernelData = load_weights(dataPath+"_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
     int width_sq = pow(dataWidth, 2);
     vector<vector<Ptext>> kernelData;
     int encode_level = encrytedVector->GetLevel();
     for(int i=0; i<outputChannels; i++){
-        auto encodeKernel = fheonHEController.encode_kernel_optimized(rawKernel[i], width_sq, encode_level);
+        auto encodeKernel = fheonHEController.encode_kernel_optimized(rawKernelData[i], width_sq, encode_level);
         kernelData.push_back(encodeKernel);
     }
     auto biasVectorEncoded = fheonHEController.encode_bais_input(biasVector, width_sq, encode_level);
@@ -245,20 +245,20 @@ vector<Ctext> double_shortcut_convolution_block(FHEONHEController &fheonHEContro
     
     /*** convolution data */
     auto biasVector = load_bias(dataPath+"_conv1_bias.csv");
-    auto rawKernel = load_weights(dataPath+"_conv1_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
+    auto rawKernelData = load_weights(dataPath+"_conv1_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
     vector<vector<Ptext>> kernelData;
     int encode_level = encrytedVector->GetLevel();
     for(int i=0; i<outputChannels; i++){
-        auto encodeKernel = fheonHEController.encode_kernel_optimized(rawKernel[i], width_sq, encode_level);
+        auto encodeKernel = fheonHEController.encode_kernel_optimized(rawKernelData[i], width_sq, encode_level);
         kernelData.push_back(encodeKernel);
     }
  
     /*** shortcut data */
     auto shortcutbiasVector = load_bias(dataPath+"_shortcut_bias.csv");
-    auto  shortcutrawKernel = load_fc_weights(dataPath+"_shortcut_weight.csv",  outputChannels, inputChannels);
+    auto  shortcutrawKernelData = load_fc_weights(dataPath+"_shortcut_weight.csv",  outputChannels, inputChannels);
     vector<Ptext> shortcutkernelData;
     for(int i=0; i < outputChannels; i++){
-        auto encodeWeights = fheonHEController.encode_bais_input(shortcutrawKernel[i], width_sq);
+        auto encodeWeights = fheonHEController.encode_bais_input(shortcutrawKernelData[i], width_sq);
         shortcutkernelData.push_back(encodeWeights);
     }
    
@@ -272,14 +272,14 @@ vector<Ctext> double_shortcut_convolution_block(FHEONHEController &fheonHEContro
 
     kernelData.clear();
     kernelData.shrink_to_fit();
-    rawKernel.clear();
-    rawKernel.shrink_to_fit();
+    rawKernelData.clear();
+    rawKernelData.shrink_to_fit();
     biasVector.clear();
 
     shortcutkernelData.clear();
     shortcutkernelData.shrink_to_fit();
-    shortcutrawKernel.clear();
-    shortcutrawKernel.shrink_to_fit();
+    shortcutrawKernelData.clear();
+    shortcutrawKernelData.shrink_to_fit();
     shortcutbiasVector.clear();
     return returnedCiphers;
 }
@@ -330,10 +330,10 @@ Ctext resnet_block(FHEONHEController &fheonHEController, FHEONANNController &fhe
 Ctext fc_layer_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int inputChannels, int outputChannels, int rotPosition){
     string dataPath = "./../weights/resnet20/"+layer;
     auto fc_biasVector = load_bias(dataPath+"_bias.csv");
-    auto fc_rawKernel = load_fc_weights(dataPath+"_weight.csv", outputChannels, inputChannels);
+    auto fc_rawKernelData = load_fc_weights(dataPath+"_weight.csv", outputChannels, inputChannels);
     vector<Ptext> fc_kernelData;
     for(int i=0; i < outputChannels; i++){
-        auto encodeWeights = fheonHEController.encode_input(fc_rawKernel[i]);
+        auto encodeWeights = fheonHEController.encode_input(fc_rawKernelData[i]);
         fc_kernelData.push_back(encodeWeights);
     }
 	Ptext encodedbaisVector = context->MakeCKKSPackedPlaintext(fc_biasVector, 1,  encrytedVector->GetLevel());
