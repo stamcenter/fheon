@@ -12,6 +12,7 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  build            - Build the Docker image (compiles OpenFHE and FHEON)"
+    echo "  build-nocache    - Build the Docker image without cache (forces fresh clone)"
     echo "  run              - Start an interactive bash session in the container"
     echo "  run-lenet5       - Run LeNet5 model in Docker"
     echo "  run-resnet20     - Run ResNet20Optimized model in Docker"
@@ -20,6 +21,7 @@ show_help() {
     echo "  run-vgg16        - Run VGG16 model in Docker"
     echo "  run-accuracy     - Run the python accuracy verification script in Docker"
     echo "  clean            - Remove any stopped FHEON Docker containers"
+    echo "  clean-image      - Remove FHEON containers, image, and build cache completely"
     echo "  help             - Show this help message"
     echo ""
 }
@@ -28,6 +30,10 @@ case "$1" in
     build)
         echo "Building Docker image: $IMAGE_NAME..."
         docker build -t "$IMAGE_NAME" .
+        ;;
+    build-nocache)
+        echo "Building Docker image without cache: $IMAGE_NAME..."
+        docker build --no-cache -t "$IMAGE_NAME" .
         ;;
     run)
         echo "Starting interactive bash session in container..."
@@ -55,7 +61,18 @@ case "$1" in
         echo "Removing any stopped FHEON containers..."
         docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
         ;;
+    clean-image)
+        echo "Removing FHEON container: $CONTAINER_NAME..."
+        docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+        echo "Pruning stopped containers..."
+        docker container prune -f
+        echo "Removing Docker image: $IMAGE_NAME..."
+        docker rmi -f "$IMAGE_NAME" 2>/dev/null || true
+        echo "Pruning Docker build cache (forces fresh clone on next build)..."
+        docker builder prune -f
+        ;;
     help|*)
         show_help
         ;;
 esac
+
