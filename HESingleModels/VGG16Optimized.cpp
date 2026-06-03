@@ -185,7 +185,7 @@ int main(int argc, char *argv[]) {
         Ctext encryptedImage = fheonHEController.encrypt_input(image);
         cout << endl << imageIndex+1 << " - image Read, Normalized and Encrypted with " << image.size() << " Elements" << endl;
         /************************************************************************************************ */
-        auto inference_time = startTime();
+        // auto inference_time = startTime();
         // cout<< "Layer 1" << endl;
         fheonHEController.clear_context(slotsValues[5]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[1], "layer1.bin", false);

@@ -178,7 +178,7 @@ int main(int argc, char *argv[]) {
         /***** The first Convolution Layer takes  image=(1,28,28), kernel=(6,1,5,5) 
          * stride=1, pooling=0 output= (6,24,24) = 3456 vals */
         reluScale = 10;
-        auto inference_time = startTime();
+        // auto inference_time = startTime();
         startIn = get_current_time();
         auto convData = fheonANNController.he_convolution(encryptedImage, conv1_kernelData, conv1biasEncoded, imgWidth[0], channels[0], channels[1], kernelWidth);
         measuringTime.push_back(measureTime(startIn, get_current_time()));

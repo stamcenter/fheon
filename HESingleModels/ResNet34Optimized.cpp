@@ -167,8 +167,8 @@ int main(int argc, char *argv[]) {
         cout << endl << imageIndex+1 << " - image Read, Normalized and Encrypted with " << image.size() << " Elements" << endl;
         /************************************************************************************************ */
         
-        auto inference_time = startTime();
-        cout<< "Layer 0" << endl;
+        // auto inference_time = startTime();
+        // cout<< "Layer 0" << endl;
         fheonHEController.clear_context(slotsValues[4]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[0], "layer1.bin", false);
         convData = convolution_block(fheonHEController, fheonANNController, "layer0_conv1", encryptedImage, dataWidth, dataSize, kernelWidth, padding, striding, img_depth, channelValues[0], reluScale, false);

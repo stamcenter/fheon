@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
         /************************************************************************************************ */
         fheonHEController.clear_context(slotsValues[3]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[0], "layer1.bin", false);
-        auto inference_time = startTime();
+        // auto inference_time = startTime();
         // cout<< "Layer 0" << endl;
         convData = convolution_block(fheonHEController, fheonANNController, "layer0_conv1", encryptedImage, dataWidth, dataSize, kernelWidth, padding, striding, img_depth, channelValues[0], reluScale, false);
         dataSize = channelValues[0]*pow(dataWidth, 2);
