@@ -229,8 +229,8 @@ int main(int argc, char *argv[]) {
         totalTime(measuringTime);
         measuringTime.clear();
 
-        string infereMessage = "Total Run Time for Image " + to_string(imageIndex + 1);  
-        printDuration(inference_time, infereMessage, false);
+        // string infereMessage = "Total Run Time for Image " + to_string(imageIndex + 1);  
+        // printDuration(inference_time, infereMessage, false);
         fheonHEController.read_inferenced_label(convData, channels[6], outFile);
     }
     outFile.close();

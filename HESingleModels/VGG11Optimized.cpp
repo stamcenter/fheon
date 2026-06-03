@@ -261,15 +261,15 @@ int main(int argc, char *argv[]) {
         fheonHEController.clear_context(slotsValues[4]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[5], "fc_layer.bin", false);
         
-        cout << "FC" << endl;
+        // cout << "FC" << endl;
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc1", convData, channelValues[3], channelValues[4], reluScale, rotPositions);
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc2", convData, channelValues[4], channelValues[4], reluScale, rotPositions);
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc3", convData, channelValues[4], channelValues[5], 0, rotPositions);
         
         totalTime(measuringTime);
         measuringTime.clear();
-        string infereMessage =  to_string(imageIndex + 1)+"  --  ";          
-        printDuration(inference_time, infereMessage, false);
+        // string infereMessage =  to_string(imageIndex + 1)+"  --  ";          
+        // printDuration(inference_time, infereMessage, false);
         decryptedData = fheonHEController.decrypt_data(convData, channelValues[5]);
         printPtextVector(decryptedData);
         fheonHEController.read_inferenced_label(convData, channelValues[5], outFile);

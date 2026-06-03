@@ -28,13 +28,18 @@ show_help() {
 
 case "$1" in
     build)
+        echo "Pulling latest changes from git..."
+        git pull
         echo "Building Docker image: $IMAGE_NAME..."
         docker build -t "$IMAGE_NAME" .
         ;;
     build-nocache)
+        echo "Pulling latest changes from git..."
+        git pull
         echo "Building Docker image without cache: $IMAGE_NAME..."
         docker build --no-cache -t "$IMAGE_NAME" .
         ;;
+
     run)
         echo "Starting interactive bash session in container..."
         docker run --rm -it --init --name "$CONTAINER_NAME" "$IMAGE_NAME"

@@ -273,8 +273,8 @@ int main(int argc, char *argv[]) {
         totalTime(measuringTime);
         measuringTime.clear();
 
-        string infereMessage =  to_string(imageIndex + 1)+"  --  ";        
-        printDuration(inference_time, infereMessage, false);
+        // string infereMessage =  to_string(imageIndex + 1)+"  --  ";        
+        // printDuration(inference_time, infereMessage, false);
         decryptedData = fheonHEController.decrypt_data(convData, channelValues[5]);
         printPtextVector(decryptedData);
         fheonHEController.read_inferenced_label(convData, channelValues[5], outFile);

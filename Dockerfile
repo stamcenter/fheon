@@ -3,7 +3,7 @@
 # ==============================================================================
 # Builder Stage
 # ==============================================================================
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -22,8 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Clone and build OpenFHE (using instructions from appendix.md)
 # Disable unittests, examples, and benchmarks to speed up build time
 WORKDIR /usr/src
-RUN git clone https://github.com/openfheorg/openfhe-development.git && \
+RUN git clone --branch v1.4.2 https://github.com/openfheorg/openfhe-development.git && \
     cd openfhe-development && \
+
     mkdir build && \
     cd build && \
     cmake -DBUILD_UNITTESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF .. && \
@@ -46,7 +47,7 @@ RUN mkdir -p build && \
 # ==============================================================================
 # Runtime Stage
 # ==============================================================================
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive

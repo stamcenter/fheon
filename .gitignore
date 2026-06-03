@@ -5,3 +5,5 @@ images/*
 HEkeys/*
 AllHEkeys/*
 myenv/*
+
+*/__pycache__/
