@@ -26,56 +26,84 @@
 def compare_strings(fhe_predictions, dataset_labels, printMessage):
     # Find the minimum length to avoid index out of range issues
     min_length = min(len(fhe_predictions), len(dataset_labels))
-    # Count the number of matching characters at the same position
+    if min_length == 0:
+        return 0
+    # Count the number of matching labels at the same position
     match_count = sum(1 for i in range(min_length) if fhe_predictions[i] == dataset_labels[i])
-    accuracy = (match_count/300) * 100
-    print(f'{printMessage} Accuracy: {accuracy}')
+    accuracy = (match_count/min_length) * 100
+    print(f'{printMessage} Accuracy: {accuracy:.1f}% ({match_count}/{min_length} lines)')
     return match_count
 
+
+
+
 def construct_text(file_path):
-    with open(file_path, 'r') as file:
-        contructed_values = file.read().replace('\n', '')
-    return contructed_values
+    try:
+        with open(file_path, 'r') as file:
+            values = []
+            for line in file:
+                parts = line.strip().split()
+                for item in parts:
+                    try:
+                        values.append(int(item))
+                    except ValueError:
+                        values.append(item)
+            return values
+    except FileNotFoundError:
+        return []
+
+
+
 
 # Loading the content of the file
 true_labels_file_path = './lenet5/truelabels.txt'
-mnist_truelabels = construct_text(true_labels_file_path)
-
 fhe_predictions_file_path = './lenet5/fhepredictions.txt'
+pytorch_predictions_file_path = './lenet5/pytorchpredictions.txt'
+mnist_truelabels = construct_text(true_labels_file_path)
 fhe_predictions = construct_text(fhe_predictions_file_path)
-
+pytorch_predictions = construct_text(pytorch_predictions_file_path)
+matching_chars = compare_strings(pytorch_predictions, mnist_truelabels, 'PyTorch Lenet5:')
 matching_chars = compare_strings(fhe_predictions, mnist_truelabels, 'FHE Lenet5:')
 
 # Loading the different files
 true_labels_file_path = './resnet20/truelabels.txt'
+fhe_predictions_file_path = './resnet20/resnet20fhepredictions.txt'
+pytorch_predictions_file_path = './resnet20/pytorchpredictions.txt'
 cifar10_truelabels = construct_text(true_labels_file_path)
-
-fhe_predictions_file_path = './resnet20/fhepredictions.txt'
 fhe_predictions = construct_text(fhe_predictions_file_path)
-
+pytorch_predictions = construct_text(pytorch_predictions_file_path)
+matching_chars = compare_strings(pytorch_predictions, cifar10_truelabels, 'PyTorch ResNet20:')
 matching_chars = compare_strings(fhe_predictions, cifar10_truelabels, 'FHE ResNet20:')
+
 
 # Loading the different files
 true_labels_file_path = './resnet34/truelabels.txt'
+fhe_predictions_file_path = './resnet34/resnet34fhepredictions.txt'
+pytorch_predictions_file_path = './resnet34/pytorchpredictions.txt'
 cifar100_truelabels = construct_text(true_labels_file_path)
-
-fhe_predictions_file_path = './resnet34/fhepredictions.txt'
 fhe_predictions = construct_text(fhe_predictions_file_path)
-
-matching_chars = compare_strings(fhe_predictions, cifar100_truelabels, 'FHE ResNet-34:')
+pytorch_predictions = construct_text(pytorch_predictions_file_path)
+matching_chars = compare_strings(pytorch_predictions, cifar100_truelabels, 'PyTorch ResNet34:')
+matching_chars = compare_strings(fhe_predictions, cifar100_truelabels, 'FHE ResNet34:')
 
 
 # Loading the different files
 true_labels_file_path = './vgg11/truelabels.txt'
+fhe_predictions_file_path = './vgg11/vgg11fhepredictions.txt'
+pytorch_predictions_file_path = './vgg11/pytorchpredictions.txt'
 cifar10_truelabels = construct_text(true_labels_file_path)
-fhe_predictions_file_path = './vgg11/fhepredictions.txt'
 fhe_predictions = construct_text(fhe_predictions_file_path)
+pytorch_predictions = construct_text(pytorch_predictions_file_path)
+matching_chars = compare_strings(pytorch_predictions, cifar10_truelabels, 'PyTorch VGG11:')
 matching_chars = compare_strings(fhe_predictions, cifar10_truelabels, 'FHE VGG11:')
 
 
 # Loading the different files
 true_labels_file_path = './vgg16/truelabels.txt'
+fhe_predictions_file_path = './vgg16/vgg16fhepredictions.txt'
+pytorch_predictions_file_path = './vgg16/pytorchpredictions.txt'
 cifar10_truelabels = construct_text(true_labels_file_path)
-fhe_predictions_file_path = './vgg16/fhepredictions.txt'
 fhe_predictions = construct_text(fhe_predictions_file_path)
+pytorch_predictions = construct_text(pytorch_predictions_file_path)
+matching_chars = compare_strings(pytorch_predictions, cifar10_truelabels, 'PyTorch VGG16:')
 matching_chars = compare_strings(fhe_predictions, cifar10_truelabels, 'FHE VGG16:')
