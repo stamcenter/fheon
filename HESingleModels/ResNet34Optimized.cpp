@@ -221,7 +221,7 @@ int main(int argc, char *argv[]) {
         measuringTime.push_back(measureTime(startIn, get_current_time()));
 
         convData = FClayer_block(fheonHEController, fheonANNController, "layer_fc", convData, channelValues[3], channelValues[4], rotPositions);
-        printDuration(inference_time, "run time", false);
+        // printDuration(inference_time, "run time", false);
 
         totalTime(measuringTime);
         measuringTime.clear();
