@@ -199,6 +199,12 @@ namespace utilsdata {
         return ones_vector;
     }
 
+    static inline vector<double> generate_scale_and_clean_mask(double scale_value, int vector_size){
+        vector<double> zeros_vector(vector_size, 0.0);
+        zeros_vector[0] = scale_value;
+        return zeros_vector;
+    }
+
     /**
      * @brief Generate a scaled mask with uniform values.
      * 
@@ -246,6 +252,22 @@ namespace utilsdata {
         }
     }
 
+
+    /**
+     * @brief Generate a one-hot mask.
+     * 
+     * @param position Index of the one-hot element.
+     * @param vector_size Total size of the mask.
+     * @return One-hot mask vector.
+     */
+    static inline vector<double> generate_one_hot_mask(int position, int vector_size){
+        vector<double> one_hot_vector(vector_size, 0.0);
+        if(position < vector_size){
+            one_hot_vector[position] = 1.0;
+        }
+        return one_hot_vector;
+    }
+
     /**
      * @brief Approximate smooth greater-than step function.
      * 
@@ -268,6 +290,16 @@ namespace utilsdata {
      */
     static inline double innerRelu(double x, double scale){
         if (x < 0) return 0; else return (1 / scale) * x;
+    }
+
+
+    static inline double factorial(int n) {
+        if (n == 0 || n == 1) return 1;
+        double result = 1.0;
+        for (int i = 2; i <= n; i++) {
+            result *= i;
+        }
+        return result;
     }
 
 
@@ -313,6 +345,68 @@ namespace utilsdata {
         return n;
     }
 
+
+    static inline unsigned int localLog2(unsigned int n) {
+        unsigned int logValue = 0;
+        while (n >>= 1) {
+            logValue++;
+        }
+        return logValue;
+    }
+
+
+    static inline double log2_approx(double x) {
+        if (x <= 0.0) return 0.0;
+
+        int k;
+        double m = std::frexp(x, &k);  // x = m * 2^k, m in [0.5,1)
+
+        m *= 2.0;
+        k -= 1;
+
+        // polynomial approximation of log2(m)
+        double t = m - 1.0;
+
+        double log2_m =
+            1.442695 * (
+                t
+                - 0.5 * t * t
+                + 0.333333 * t * t * t
+            );
+
+        return k + log2_m;
+    }
+
+
+
+    static inline double ln_approx(double x) {
+        int terms = 20;
+        if (x <= 0) {
+            return 0;
+        }
+
+        double y = x - 1.0;
+        double result = 0.0;
+        double power = y;
+
+        for (int n = 1; n <= terms; n++) {
+            double term = power / n;
+
+            if (n % 2 == 0)
+                result -= term;
+            else
+                result += term;
+
+            power *= y;
+        }
+
+        return result;
+    }
+
+    static inline double doerfler_ln(double x) {
+        return 6.0 * (x - 1.0) /
+            (x + 1.0 + 4.0 * sqrt(x));
+    }
 
 
     /**
@@ -364,6 +458,7 @@ namespace utilsdata {
         vector<vector<double>> data = loadCSV(fileName);
         vector<double> bias; 
         for (size_t i = 0; i< data.size(); i++) {
+            
             bias = data[0];
             // cout << " bias data: "<< bias << endl;
         }
@@ -399,7 +494,12 @@ namespace utilsdata {
             for(int j=0; j<inputChannels; j++){
                 for(int k=0; k<rowsWidth; k++){
                     for(int l=0; l<imgCols; l++){
-                        reshapedData[i][j][k][l] = raw_weights[indexVal];
+
+                        double cellVal = raw_weights[indexVal];
+                        if( abs(cellVal) < 1e-20){
+                            cellVal = 0.0;
+                        }
+                        reshapedData[i][j][k][l] = cellVal;
                         indexVal+=1;
                     }
                 }
@@ -433,7 +533,11 @@ namespace utilsdata {
         int indexVal = 0; 
         for(int i = 0; i< outputChannels; i++){
             for(int j=0; j< inputChannels; j++){
-                reshapedData[i][j] = raw_weights[indexVal];
+                double cellVal = raw_weights[indexVal];
+                if( abs(cellVal) < 1e-20){
+                    cellVal = 0.0;
+                }
+                reshapedData[i][j] = cellVal;
                 indexVal+=1;
             }
         }
@@ -506,6 +610,60 @@ namespace utilsdata {
         std::sort(rotation_positions.begin(), rotation_positions.end());
 
         return rotation_positions;
+    }
+
+
+    /**
+     * @brief Prepare convolution kernels for encryption.
+     *
+     * This function takes the raw convolution kernels, applies binary masks to 
+     * clean them, and encodes them for encryption. The resulting encoded kernels 
+     * are returned as a vector of plaintexts.
+     *
+     * @param main_kernel 3D vector containing the raw convolution kernels.
+     * @param kernelWidth_sq Square of the kernel width (e.g., 9 for 3x3).
+     * @param cols_square Square of the number of columns in the input (e.g., 16 for 4x4).
+     * @param dim1 First dimension size for masking.
+     * @param encode_level Level to use for encoding.
+     * @return Vector of encoded plaintext kernels ready for encryption.
+     */
+    static inline vector<double> build_tile_mask(int starting_padding, int ending_padding, 
+        int window_length, int max_length, int tile_count) {
+    
+        vector<double> mask;
+
+        // Add starting padding
+        for (int i = 0; i < starting_padding; ++i) {
+            mask.push_back(0.0);
+        }
+
+        // Add windows of 1s and a trailing 0
+        while (mask.size() < static_cast<size_t>(max_length - ending_padding)) {
+            for (int j = 0; j < window_length; ++j) {
+                mask.push_back(1.0);
+            }
+            mask.push_back(0.0);
+        }
+
+        // Trim or pad the mask to match max_length
+        while (mask.size() > static_cast<size_t>(max_length)) {
+            mask.pop_back();
+        }
+        while (mask.size() < static_cast<size_t>(max_length)) {
+            mask.push_back(0.0);
+        }
+
+        // Add ending padding
+        for (int i = 0; i < ending_padding; ++i) {
+            mask[max_length - i - 1] = 0.0;
+        }
+
+        // Tile the mask
+        std::vector<double> tiled_mask;
+        for (int i = 0; i < tile_count; ++i) {
+            tiled_mask.insert(tiled_mask.end(), mask.begin(), mask.end());
+        }
+        return tiled_mask;
     }
 
 }

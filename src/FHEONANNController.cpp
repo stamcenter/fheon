@@ -1698,7 +1698,8 @@ Ctext FHEONANNController::he_relu(Ctext& encryptedInput, double scaleValue,  int
     
     auto encryptInn = encryptedInput->Clone();
     if(scaleValue > 1){
-        auto mask_data = context->MakeCKKSPackedPlaintext(generate_scale_mask(scaleValue, vectorSize), 1, 0, nullptr, nextPowerOf2(vectorSize));
+        // scaleValue = 2*scaleValue;
+        auto mask_data = context->MakeCKKSPackedPlaintext(generate_scale_mask(scaleValue, vectorSize), 1, encryptedInput->GetLevel(), nullptr, nextPowerOf2(vectorSize));
         encryptInn = context->EvalMult(encryptedInput, mask_data);
     }
     else{

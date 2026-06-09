@@ -133,15 +133,143 @@ namespace utilsimages {
     }
 
     /**
-     * @brief Clear image data from memory.
+     * @brief Load a batch of individual CIFAR-10 .bin images starting from a given index.
      *
-     * @param imagesData Vector of images.
-     * @param numImages Number of images (unused, kept for consistency).
+     * Reads numImages individual .bin files (e.g., 0000.bin, 0001.bin, ...) from the specified folder,
+     * starting from startIndex. Each file contains one image in channel-first order (C, H, W).
+     * If normalize is true, applies CIFAR-10 normalization; otherwise, returns raw values.
+     *
+     * @param folderPath Path to the folder containing .bin files.
+     * @param startIndex Starting index for file names (e.g., 0 for 000.bin).
+     * @param numImages Number of images to load.
+     * @param normalize If true, normalize pixel values with CIFAR-10 mean/std.
+     * @return Vector of images, each as a flattened [R,G,B] channel vector.
      */
-    static inline void clear_images(vector<vector<double>> imagesData, int numImages){
-        // free the memory
-        imagesData.clear();
+    static inline vector<vector<double>> readBatchCIFAR10Images(const string& folderPath, int startIndex, int batchSize, bool normalize) {
+        int img_cols = 32;
+        int img_size = 3 * img_cols * img_cols;  // 3072
+        vector<double> meanValues = {0.4914, 0.4822, 0.4465};
+        vector<double> stdValues = {0.2023, 0.1994, 0.2010};
+        vector<vector<double>> allImages;
+
+        for (int i = 0; i < batchSize; ++i) {
+            int fileIndex = startIndex + i;
+            string filename = (fileIndex < 10 ? "000" : (fileIndex < 100 ? "00" : (fileIndex < 1000 ? "0" : ""))) + to_string(fileIndex) + ".bin";
+            string filepath = folderPath + "/" + filename;
+
+            cout << "Loading image: " << filepath << endl;
+
+            ifstream file(filepath, ios::binary);
+            if (!file.is_open()) {
+                cerr << "Error opening file: " << filepath << endl;
+                continue;  // Skip missing files or handle error
+            }
+
+            vector<double> allPixels;
+            if (normalize) {
+                // Read as float32 (normalized data)
+                vector<float> floatPixels(img_size);
+                file.read(reinterpret_cast<char*>(floatPixels.data()), img_size * sizeof(float));
+                for (float val : floatPixels) {
+                    allPixels.push_back(static_cast<double>(val));
+                }
+            } else {
+                // Read as uint8 (raw data)
+                vector<uint8_t> imagePixels(img_size);
+                file.read(reinterpret_cast<char*>(imagePixels.data()), img_size);
+                for (uint8_t val : imagePixels) {
+                    allPixels.push_back(static_cast<double>(val));
+                }
+            }
+            file.close();
+
+            // The data is in channel-first order (C, H, W), but we need to convert to channel-last for consistency with read_images
+            // read_images returns [R,G,B] flattened, so rearrange
+            vector<double> redChannel(img_cols * img_cols);
+            vector<double> greenChannel(img_cols * img_cols);
+            vector<double> blueChannel(img_cols * img_cols);
+
+            for (int j = 0; j < img_cols * img_cols; ++j) {
+                redChannel[j] = allPixels[j];
+                greenChannel[j] = allPixels[img_cols * img_cols + j];
+                blueChannel[j] = allPixels[2 * img_cols * img_cols + j];
+            }
+
+            vector<double> reorderedPixels;
+            reorderedPixels.insert(reorderedPixels.end(), redChannel.begin(), redChannel.end());
+            reorderedPixels.insert(reorderedPixels.end(), greenChannel.begin(), greenChannel.end());
+            reorderedPixels.insert(reorderedPixels.end(), blueChannel.begin(), blueChannel.end());
+
+            if (normalize) {
+                // Already normalized in the file
+                allImages.push_back(reorderedPixels);
+            } else {
+                // Apply normalization here
+                for (size_t k = 0; k < reorderedPixels.size(); ++k) {
+                    int channel = k / (img_cols * img_cols);
+                    double val = reorderedPixels[k] / 255.0;
+                    val = (val - meanValues[channel]) / stdValues[channel];
+                    reorderedPixels[k] = val;
+                }
+                allImages.push_back(reorderedPixels);
+            }
+        }
+
+        return allImages;
     }
+
+    /**
+     * @brief Load a batch of CIFAR-10 labels from a CSV file starting from a given index.
+     *
+     * Reads numImages labels from the specified CSV file, starting from startIndex.
+     * Each line in the CSV file is expected to contain a single label corresponding to an image.
+     *
+     * @param folderPath Path to the folder containing labels.csv.
+     * @param startIndex Starting index for reading labels (e.g., 0 for the first label).
+     * @param numImages Number of labels to load.
+     * @return Vector of labels as doubles.
+     */
+    static inline vector<double> readBatchedCIFAR10Labels(const string& folderPath, int startIndex, int batchSize ) {
+        vector<double> labels;
+        //read from the labels.csv file
+        string labelFilePath = folderPath + "/labels.csv";
+        ifstream file(labelFilePath);
+        if (!file.is_open()) {
+            cerr << "Error opening label file: " << labelFilePath << endl;
+            return {};
+        }
+        string line;
+        int currentIndex = 0;
+        while (getline(file, line)) {
+            if (currentIndex >= startIndex && currentIndex < startIndex + batchSize) {
+                try {                    
+                    labels.push_back(stod(line));
+                } catch (const std::invalid_argument& e) {
+                    cerr << "Invalid label: " << line << endl;
+                    labels.push_back(0.0);  // Default to 0.0 for invalid labels
+                }
+                currentIndex++;
+            }
+            if (currentIndex >= startIndex + batchSize) {
+                break;  // Stop reading after we have the required number of labels
+            }
+        }
+        file.close();   
+        return labels;
+    }
+
+
+
+
+     /**
+     * @brief Flatten a 3D vector of doubles into a single 1D vector.
+     *
+     * @param matrix3D Input 3D vector to flatten.
+     * @return Flattened 1D vector containing all elements of the input.
+     */
+
+
+
 
     /**
      * @brief Read MNIST images from a binary file into a 2D unsigned char array.
@@ -290,6 +418,22 @@ namespace utilsimages {
         }
         delete[] mnistData;
     }
+
+
+
+   /**
+     * @brief Clear image data from memory.
+     *
+     * @param imagesData Vector of images.
+     * @param numImages Number of images (unused, kept for consistency).
+     */
+    static inline void clear_images(vector<vector<double>> imagesData, int numImages){
+        // free the memory
+        imagesData.clear();
+    }
+
+
+
 
 }
 

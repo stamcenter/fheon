@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
         cout << endl << imageIndex+1 << " - image Read, Normalized and Encrypted with " << image.size() << " Elements" << endl;
         /************************************************************************************************ */
         // auto inference_time = startTime();
-        // cout<< "Layer 1" << endl;
+        cout<< "Layer 1" << endl;
         fheonHEController.clear_context(slotsValues[5]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[1], "layer1.bin", false);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv1", encryptedImage, dataWidth, dataSize, kernelWidth, padding, striding, img_depth, channelValues[0], reluScale, false);
@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
         fheonHEController.clear_context(slotsValues[0]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[1], "layer2.bin", false);
 
-        // cout<< "Layer 2" << endl;
+        cout<< "Layer 2" << endl;
         convData = fheonHEController.bootstrap_function(convData);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv3", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[0], channelValues[1], reluScale, true);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv4", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[1], channelValues[1], reluScale, true);
@@ -219,7 +219,7 @@ int main(int argc, char *argv[]) {
         fheonHEController.clear_context(slotsValues[1]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[2], "layer3.bin", false);
 
-        // cout<< "Layer 3" << endl;
+        cout<< "Layer 3" << endl;
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv5", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[1], channelValues[2], reluScale);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv6", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[2], channelValues[2], reluScale);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv7", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[2], channelValues[2], reluScale);
@@ -235,7 +235,7 @@ int main(int argc, char *argv[]) {
         fheonHEController.clear_context(slotsValues[2]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[3], "layer4.bin", false);
 
-        // cout<< "Layer 4" << endl;
+        cout<< "Layer 4" << endl;
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv8",  convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[2], channelValues[3], reluScale);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv9",  convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[3], channelValues[3], reluScale);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv10", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[3], channelValues[3], reluScale);
@@ -251,7 +251,7 @@ int main(int argc, char *argv[]) {
         fheonHEController.clear_context(slotsValues[3]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[4], "layer5.bin", false);
         
-        // cout<< "Layer 5" << endl;
+        cout<< "Layer 5" << endl;    
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv11", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[3], channelValues[3], reluScale);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv12", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[3], channelValues[3], reluScale);
         convData = convolution_relu_block(fheonHEController, fheonANNController, "conv13", convData, dataWidth, dataSize, kernelWidth, padding, striding, channelValues[3], channelValues[3], reluScale);
@@ -266,6 +266,8 @@ int main(int argc, char *argv[]) {
 
         fheonHEController.clear_context(slotsValues[4]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[5], "fc_layer.bin", false);
+
+        cout << "Classification " << endl;
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc1", convData, channelValues[3], channelValues[4], reluScale, rotPositions);
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc2", convData, channelValues[4], channelValues[4], reluScale, rotPositions);
         convData = FClayer_relu_block(fheonHEController, fheonANNController, "fc3", convData, channelValues[4], channelValues[5], 0, rotPositions);

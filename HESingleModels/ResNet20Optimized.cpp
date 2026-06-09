@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
         fheonHEController.clear_context(slotsValues[3]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[0], "layer1.bin", false);
         // auto inference_time = startTime();
-        // cout<< "Layer 0" << endl;
+        cout<< "Layer 0" << endl;
         convData = convolution_block(fheonHEController, fheonANNController, "layer0_conv1", encryptedImage, dataWidth, dataSize, kernelWidth, padding, striding, img_depth, channelValues[0], reluScale, false);
         dataSize = channelValues[0]*pow(dataWidth, 2);
         reluScale = fheonHEController.read_scaling_value(convData, dataSize);
@@ -171,21 +171,21 @@ int main(int argc, char *argv[]) {
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
         
-        // cout<< endl<<  "Layer 1" << endl;
+        cout <<  "Layer 1" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block1", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, false, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block2", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block3", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< endl<< "Layer 2" << endl;
+        cout<< "Layer 2" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block1", convData, dataWidth, dataSize, channelValues[0], channelValues[1], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block2", convData, dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block3", convData, dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< endl<<  "Layer 3" << endl;
+        cout<< "Layer 3" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block1", convData, dataWidth, dataSize, channelValues[1], channelValues[2], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block2", convData, dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block3", convData, dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
 		// printDuration(inference_time, "run time", false);
         // totalTime(measuringTime);
 
-        // cout<< "Classification" << endl;
+        cout<< "Classification" << endl;
         convData = fheonHEController.bootstrap_function(convData);
         fheonHEController.clear_context(slotsValues[2]);
         fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[3], "fc_layer.bin", false);

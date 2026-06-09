@@ -372,10 +372,11 @@ void FHEONHEController::load_context(bool verbose) {
  */
 void FHEONHEController::generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize) {
     
-    // int numSlots = 1<<bootstrap_slots;
-    // context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
-    // context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
+    int numSlots = 1<<bootstrap_slots;
+    context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
+    context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
     context->EvalMultKeyGen(keyPair.secretKey);
+    context->EvalSumKeyGen(keyPair.secretKey);
 
     if(serialize){
         ofstream multKeysFile(keys_folder + mult_prefix + filename, ios::out | ios::binary);
@@ -460,12 +461,26 @@ void FHEONHEController::generate_bootstrapping_and_rotation_keys(vector<int> rot
  * @param filename         Filename from which to load the keys.
  * @param verbose          Whether to display detailed loading information.
  */
+
+
+/**
+ * @brief Load previously generated bootstrapping and rotation keys from storage.
+ *
+ * This function loads bootstrapping and rotation keys that were previously 
+ * generated and serialized, using the specified filename. Verbose mode can 
+ * be enabled to display loading details.
+ *
+ * @param bootstrap_slots  Number of bootstrapping slots.
+ * @param filename         Filename from which to load the keys.
+ * @param verbose          Whether to display detailed loading information.
+ */
 void FHEONHEController::load_bootstrapping_and_rotation_keys(int bootstrap_slots, const string& filename, bool verbose) {
     if (verbose) cout << endl << "Loading bootstrapping and rotations keys from " << filename << "..." << endl;
 
-    int numSlots =  1 << bootstrap_slots;
-    context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
-    context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
+    // int numSlots =  1 << bootstrap_slots;
+    // context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
+    // context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
+    // context->EvalSumKeyGen(keyPair.secretKey);
 
     if (verbose)  cout << "(1/4) Bootstrapping precomputations completed!" << endl;
     
@@ -492,7 +507,6 @@ void FHEONHEController::load_bootstrapping_and_rotation_keys(int bootstrap_slots
     if (verbose) cout << "(4/4) Rotation keys deserialized and loaded!" << endl;
     if (verbose) cout << endl;
 }
-
 
 /**
  * @brief Load rotation keys from a specified file.
