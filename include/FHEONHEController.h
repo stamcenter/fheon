@@ -85,9 +85,9 @@ public:
     void generate_context(int ringDim=15, int numSlots=14, int mlevelBootstrap=10, int dcrtBits=55, int firstMod=56,   
                         int numDigits=3, vector<uint32_t> levelBudget ={4, 4}, bool serialize=true);
 
-    void generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize);
+    void generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize, bool sumkey = false);
     void generate_rotation_keys(vector<int> rotations, string filename = "", bool serialize = true);
-    void generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename, bool serialize);
+    void generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename, bool serialize, bool sumkey = false);
     
     void load_context(bool verbose = false);
     void load_rotation_keys(const string& filename, bool verbose=false);

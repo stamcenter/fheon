@@ -369,14 +369,17 @@ void FHEONHEController::load_context(bool verbose) {
  * @param bootstrap_slots  Number of bootstrapping slots.
  * @param filename         Filename to use when saving the keys.
  * @param serialize        Whether to serialize and save the bootstrapping keys.
+ * @param sumkey           Whether to generate sum keys.    
  */
-void FHEONHEController::generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize) {
+void FHEONHEController::generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize, bool sumkey) {
     
     int numSlots = 1<<bootstrap_slots;
     context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
     context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
     context->EvalMultKeyGen(keyPair.secretKey);
-    context->EvalSumKeyGen(keyPair.secretKey);
+    if(sumkey){
+        context->EvalSumKeyGen(keyPair.secretKey);
+    }
 
     if(serialize){
         ofstream multKeysFile(keys_folder + mult_prefix + filename, ios::out | ios::binary);
@@ -439,13 +442,13 @@ void FHEONHEController::generate_rotation_keys(const vector<int> rotations, std:
  * @param filename         Filename to use when saving the keys.
  * @param serialize        Whether to serialize and save the generated keys.
  */
-void FHEONHEController::generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename,  bool serialize) {
+void FHEONHEController::generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename,  bool serialize, bool sumkey) {
     if (serialize && filename.empty()) {
         cout << "Filename cannot be empty when serializing bootstrapping and rotation keys." << endl;
         return;
     }
 
-    generate_bootstrapping_keys(bootstrap_slots, filename, serialize);
+    generate_bootstrapping_keys(bootstrap_slots, filename, serialize, sumkey);
     generate_rotation_keys(rotations, filename, serialize);
 }
 

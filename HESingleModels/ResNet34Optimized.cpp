@@ -152,7 +152,7 @@ int main(int argc, char *argv[]) {
     fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_layer4, slotsValues[3], "layer4.bin", true);
     fheonHEController.clear_context(slotsValues[3]);
 
-    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_fc_layer, slotsValues[4], "fc_layer.bin", true);
+    fheonHEController.generate_bootstrapping_and_rotation_keys(serkeys_fc_layer, slotsValues[4], "fc_layer.bin", true, true);
     fheonHEController.clear_context(slotsValues[4]);
 
     printDuration(begin_rotkeygenerate_time, "Rotation KeyGen Time", false);
