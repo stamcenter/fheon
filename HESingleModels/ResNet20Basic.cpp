@@ -34,8 +34,8 @@ using namespace std;
 CryptoContext<DCRTPoly> context;
 FHEONHEController fheonHEController(context);
 
-#ifndef DEFAULT_ARG
-#define DEFAULT_ARG 250
+#ifndef DEFAULT_BATCH_SIZE
+#define DEFAULT_BATCH_SIZE 10
 #endif
 
 #ifndef INDEX_VALUE
@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------------------------RESNET20-------------"<< to_string(DEFAULT_ARG) << "--------------------------" << endl; 
+    cout << "---------------------------------RESNET20-------------"<< to_string(DEFAULT_BATCH_SIZE) << "--------------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     int img_cols = 32;
@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
     printDuration(begin_rotkeygenerate_time, "Rotation KeyGen Time", false);
     /********************************************************************************************************************************************/;
     
-    int numImages = DEFAULT_ARG+INDEX_VALUE;
+    int numImages = DEFAULT_BATCH_SIZE+INDEX_VALUE;
     dataWidth = img_cols;
     int dataSize = img_depth*pow(img_cols, 2);
     string cifar10tPath = "./../images/cifar-10-batches-bin/test_batch.bin";
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
     Ptext decryptedData;
     int reluScale = 10;
 
-    for (int imageIndex = 0; imageIndex < numImages; imageIndex++) {
+    for (int imageIndex = INDEX_VALUE; imageIndex < numImages; imageIndex++) {
         dataWidth = img_cols;
         dataSize = img_depth*pow(dataWidth, 2);
         auto image = imagesData[imageIndex];

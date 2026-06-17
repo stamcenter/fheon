@@ -153,7 +153,7 @@ if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
                 include/FHEONHEController.h src/FHEONHEController.cpp
                 include/FHEONANNController.h src/FHEONANNController.cpp
             )
-            target_compile_definitions(${model_name} PRIVATE DEFAULT_ARG=10)
+            target_compile_definitions(${model_name} PRIVATE DEFAULT_BATCH_SIZE=10)
         endif()
     endforeach()
 endif()
@@ -216,7 +216,7 @@ if(MODE STREQUAL "HIGH_THROUGHPUT" OR MODE STREQUAL "ALL")
                 include/FHEONANNController.h src/FHEONANNController.cpp
                 include/FHEONANNBatchController.h src/FHEONANNBatchController.cpp
             )
-            target_compile_definitions(${model_name} PRIVATE DEFAULT_ARG=${extracted_batch_size})
+            target_compile_definitions(${model_name} PRIVATE DEFAULT_BATCH_SIZE=${extracted_batch_size})
         endif()
     endforeach()
 endif()

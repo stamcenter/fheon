@@ -34,8 +34,13 @@ using namespace std;
 CryptoContext<DCRTPoly> context;
 FHEONHEController fheonHEController(context);
 
-#ifndef DEFAULT_ARG
-#define DEFAULT_ARG 100
+#ifndef DEFAULT_BATCH_SIZE
+#define DEFAULT_BATCH_SIZE 10
+#endif
+
+
+#ifndef INDEX_VALUE
+#define INDEX_VALUE 0
 #endif
 
 vector<int> measuringTime;
@@ -63,11 +68,11 @@ int main(int argc, char *argv[]) {
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------VGG16-------------"<< to_string(DEFAULT_ARG) << "--------------------" << endl; 
+    cout << "---------------VGG16-------------"<< to_string(DEFAULT_BATCH_SIZE) << "--------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     string cifar10tPath = "./../images/cifar-10-batches-bin/test_batch.bin";
-    int numImages = DEFAULT_ARG;
+    int numImages = DEFAULT_BATCH_SIZE+INDEX_VALUE;
     int img_cols = 32;
     int img_depth = 3;
     int dataWidth = img_cols;
@@ -178,7 +183,7 @@ int main(int argc, char *argv[]) {
 
     /********************************************************************************************************************************************/
     int reluScale = 20; // not in use at this time
-    for (int imageIndex = 0; imageIndex < DEFAULT_ARG; imageIndex++) {
+    for (int imageIndex = INDEX_VALUE; imageIndex < numImages; imageIndex++) {
         auto image = imagesData[imageIndex];
         dataWidth = img_cols;
         // display_image(image, imageSize, true);

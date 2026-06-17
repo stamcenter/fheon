@@ -34,8 +34,12 @@ using namespace std;
 CryptoContext<DCRTPoly> context;
 using namespace std;
 
-#ifndef DEFAULT_ARG
-#define DEFAULT_ARG 100
+#ifndef DEFAULT_BATCH_SIZE
+#define DEFAULT_BATCH_SIZE 10
+#endif
+
+#ifndef INDEX_VALUE
+#define INDEX_VALUE 0
 #endif
 
 Ctext convolution_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int &dataWidth, int &dataSize, int kernelWidth, int padding, 
@@ -67,11 +71,11 @@ int main(int argc, char *argv[]) {
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------RESNET34-------------"<< to_string(DEFAULT_ARG) << "--------------------" << endl; 
+    cout << "---------------RESNET34-------------"<< to_string(DEFAULT_BATCH_SIZE) << "--------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     string cifar10tPath = "./../images/cifar-100-binary/test.bin";
-    int numImages = 1000;
+    int numImages = DEFAULT_BATCH_SIZE+INDEX_VALUE;
     int img_cols = 32;
     int img_depth = 3;
     int dataWidth = img_cols;
@@ -158,7 +162,7 @@ int main(int argc, char *argv[]) {
     printDuration(begin_rotkeygenerate_time, "Rotation KeyGen Time", false);
     /********************************************************************************************************************************************/
     int reluScale = 10;
-    for (int imageIndex = 0; imageIndex < DEFAULT_ARG; imageIndex++) {
+    for (int imageIndex = INDEX_VALUE; imageIndex < numImages; imageIndex++) {
         dataWidth = img_cols;
         dataSize = img_depth*pow(dataWidth, 2);
         auto image = imagesData[imageIndex];

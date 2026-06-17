@@ -39,8 +39,8 @@ FHEONHEController fheonHEController(context);
 #define INDEX_VALUE 0
 #endif
 
-#ifndef DEFAULT_ARG
-#define DEFAULT_ARG 250
+#ifndef DEFAULT_BATCH_SIZE
+#define DEFAULT_BATCH_SIZE 10
 #endif
 
 vector<int> measuringTime;
@@ -156,7 +156,7 @@ int main(int argc, char *argv[]) {
     string mnistPath = "./../images/mnist_images/raw/t10k-images-idx3-ubyte";
     int numImages = 1;
     int imageSize = channels[0]*(imgWidth[0]* imgWidth[0]);
-    int numtoShow = DEFAULT_ARG+INDEX_VALUE;
+    int numtoShow = DEFAULT_BATCH_SIZE+INDEX_VALUE;
     int reluScale = 10;
     vector<int> dataSizeVector;
     dataSizeVector.push_back((channels[1]*pow(imgWidth[1], 2)));

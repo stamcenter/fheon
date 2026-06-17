@@ -34,8 +34,8 @@ using namespace std;
 CryptoContext<DCRTPoly> context;
 FHEONHEController fheonHEController(context);
 
-#ifndef DEFAULT_ARG
-#define DEFAULT_ARG 250
+#ifndef DEFAULT_BATCH_SIZE
+#define DEFAULT_BATCH_SIZE 10
 #endif
 
 #ifndef INDEX_VALUE
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------------------------RESNET20-------------"<< to_string(DEFAULT_ARG) << "--------------------------" << endl; 
+    cout << "---------------------------------RESNET20-------------"<< to_string(DEFAULT_BATCH_SIZE) << "--------------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     int img_cols = 32;
@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
 
     fclayer_data_processing(fheonHEController, layer_names[10], fc_kernelData, fc_baisData, channelValues[2], channelValues[3]);
 
-    int numImages = DEFAULT_ARG+INDEX_VALUE;
+    int numImages = DEFAULT_BATCH_SIZE+INDEX_VALUE;
     int dataSize = img_depth*pow(img_cols, 2);
     string cifar10tPath = "./../images/cifar-10-batches-bin/test_batch.bin";
     vector<vector<double>> imagesData = read_images(cifar10tPath, numImages, dataSize);
