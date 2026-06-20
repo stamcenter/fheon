@@ -17,6 +17,9 @@ set_property(CACHE MODE PROPERTY STRINGS "ALL" "SINGLE_INPUT" "HIGH_THROUGHPUT")
 # For SINGLE_INPUT: specific model to build (ALL, LeNet5, ResNet20, VGG11, VGG16, ResNet34)
 set(SINGLE_MODEL "ALL" CACHE STRING "Single-input model to build: ALL, LeNet5, ResNet20, VGG11, VGG16, ResNet34")
 
+# Default test size for single-input models
+set(TEST_SIZE "10" CACHE STRING "Default test size / batch size for single-input models")
+
 # For HIGH_THROUGHPUT: specific resnet to build (ALL, ResNet20, ResNet34) and batch size
 set(BATCH_MODEL "ALL" CACHE STRING "Batch model to build: ALL, ResNet20, ResNet34")
 set(BATCH_SIZE "ALL" CACHE STRING "Batch size: ALL, 16, 32, 64, 128, 256, 512")
@@ -153,7 +156,7 @@ if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
                 include/FHEONHEController.h src/FHEONHEController.cpp
                 include/FHEONANNController.h src/FHEONANNController.cpp
             )
-            target_compile_definitions(${model_name} PRIVATE DEFAULT_BATCH_SIZE=10)
+            target_compile_definitions(${model_name} PRIVATE DEFAULT_BATCH_SIZE=${TEST_SIZE} DEFAULT_TEST_SIZE=${TEST_SIZE})
         endif()
     endforeach()
 endif()
@@ -216,7 +219,7 @@ if(MODE STREQUAL "HIGH_THROUGHPUT" OR MODE STREQUAL "ALL")
                 include/FHEONANNController.h src/FHEONANNController.cpp
                 include/FHEONANNBatchController.h src/FHEONANNBatchController.cpp
             )
-            target_compile_definitions(${model_name} PRIVATE DEFAULT_BATCH_SIZE=${extracted_batch_size})
+            target_compile_definitions(${model_name} PRIVATE DEFAULT_TEST_SIZE=${extracted_batch_size})
         endif()
     endforeach()
 endif()

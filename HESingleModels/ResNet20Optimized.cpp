@@ -34,8 +34,8 @@ using namespace std;
 CryptoContext<DCRTPoly> context;
 FHEONHEController fheonHEController(context);
 
-#ifndef DEFAULT_BATCH_SIZE
-#define DEFAULT_BATCH_SIZE 10
+#ifndef DEFAULT_TEST_SIZE
+#define DEFAULT_TEST_SIZE 10
 #endif
 
 #ifndef INDEX_VALUE
@@ -57,7 +57,7 @@ vector<int> slotsValues = {14, 14, 14, 14};
 int main(int argc, char *argv[]) {
 
     // add a commandline argument --test_size 10
-    int defaultBatchSize = DEFAULT_BATCH_SIZE;
+    int defaultBatchSize = DEFAULT_TEST_SIZE;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--test_size") == 0) {
             defaultBatchSize = atoi(argv[i + 1]);

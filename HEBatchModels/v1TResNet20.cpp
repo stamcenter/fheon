@@ -34,8 +34,8 @@ using namespace std;
 CryptoContext<DCRTPoly> context;
 FHEONHEController fheonHEController(context);
 
-#ifndef DEFAULT_BATCH_SIZE
-#define DEFAULT_BATCH_SIZE 256
+#ifndef DEFAULT_TEST_SIZE
+#define DEFAULT_TEST_SIZE 256
 #endif
 
 #ifndef INDEX_VALUE
@@ -73,7 +73,7 @@ int main(int argc, char *argv[]) {
     FHEONANNController fheonANNController(context);
     FHEONANNBatchController fheonANNBatchController( context);
     printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------------------------RESNET20-------------"<< to_string(DEFAULT_BATCH_SIZE) << "--------------------------" << endl; 
+    cout << "---------------------------------RESNET20-------------"<< to_string(DEFAULT_TEST_SIZE) << "--------------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     int img_cols = 32;
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
     printDuration(begin_rotkeygen_time, "Rotation KeyGen Time", false);
     /********************************************************************************************************************************************/;
     
-    int numImages = DEFAULT_BATCH_SIZE+INDEX_VALUE;
+    int numImages = DEFAULT_TEST_SIZE+INDEX_VALUE;
     int dataSize = img_depth*pow(img_cols, 2);
     string cifar10tPath = "./../images/cifar-10-batches-bin/test_batch.bin";
     vector<vector<double>> imagesData = read_images(cifar10tPath, numImages, dataSize);

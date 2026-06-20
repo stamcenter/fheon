@@ -119,8 +119,20 @@ Each binary produces the following outputs:
 - It loads the model weights when required.
 - It reports the time required to inference every image required to interpret the results.
 
-These results summarized in Table 5. The defualt number of images ran for each model is 10. You can change this in the `CMamkeList.txt` or set the value as 
-`./build/LeNet5`
+These results are summarized in Table 5. The default number of images run for each model (the test size) is 10. You can change this test size in two ways:
+
+1. **At Build Time (CMake):**
+   Configure the default test size when running CMake:
+   ```bash
+   cmake -DMODE=SINGLE_INPUT -DTEST_SIZE=20 ..
+   make -j$(nproc)
+   ```
+
+2. **At Run Time:**
+   Override the default test size by passing the `--test_size` argument to the executable:
+   ```bash
+   ./build/LeNet5 --test_size 20
+   ```
 
 
 ## Datasets
@@ -132,18 +144,25 @@ These results summarized in Table 5. The defualt number of images ran for each m
 
 ## Option B — Docker
 
-To build the Docker image and run single-input model binaries inside a container, you can use the helper script `run_docker_script.sh`:
+To build the Docker image and run single-input model binaries inside a container, you can use the helper script `run_docker_script.sh`. You can also configure the test size at build time or run time:
 
 ```bash
 # Build the Docker image (compiles OpenFHE and FHEON inside the container)
 ./run_docker_script.sh build
 
+# Build with a custom default test size (e.g., 20 instead of 10)
+./run_docker_script.sh build --test_size 20
+
 # Run specific single-input model binaries in Docker
 ./run_docker_script.sh run-lenet5
 ./run_docker_script.sh run-resnet20
-./run_docker_script.sh run-resnet34
-./run_docker_script.sh run-vgg11
-./run_docker_script.sh run-vgg16
+
+# Run with a custom test size at run time (overrides the built-in default)
+./run_docker_script.sh run-lenet5 --test_size 20
+./run_docker_script.sh run-resnet20 --test_size 20
+./run_docker_script.sh run-resnet34 --test_size 20
+./run_docker_script.sh run-vgg11 --test_size 20
+./run_docker_script.sh run-vgg16 --test_size 20
 
 # Run accuracy checking script in Docker
 ./run_docker_script.sh run-accuracy

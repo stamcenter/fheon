@@ -45,13 +45,13 @@ case "$1" in
         echo "Pulling latest changes from git..."
         git pull
         echo "Building Docker image: $IMAGE_NAME..."
-        docker build -t "$IMAGE_NAME" .
+        docker build ${TEST_SIZE:+--build-arg TEST_SIZE="$TEST_SIZE"} -t "$IMAGE_NAME" .
         ;;
     build-nocache)
         echo "Pulling latest changes from git..."
         git pull
         echo "Building Docker image without cache: $IMAGE_NAME..."
-        docker build --no-cache -t "$IMAGE_NAME" .
+        docker build --no-cache ${TEST_SIZE:+--build-arg TEST_SIZE="$TEST_SIZE"} -t "$IMAGE_NAME" .
         ;;
 
     run)

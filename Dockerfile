@@ -39,9 +39,10 @@ RUN git clone https://github.com/stamcenter/fheon.git /app
 WORKDIR /app
 
 # Build FHEON in SINGLE_INPUT mode as described in appendix.md
+ARG TEST_SIZE=10
 RUN mkdir -p build && \
     cd build && \
-    cmake -DMODE=SINGLE_INPUT -DSINGLE_MODEL=ALL .. && \
+    cmake -DMODE=SINGLE_INPUT -DSINGLE_MODEL=ALL -DTEST_SIZE=${TEST_SIZE} .. && \
     make -j$(nproc)
 
 # ==============================================================================
