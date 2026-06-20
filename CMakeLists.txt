@@ -156,7 +156,7 @@ if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
                 include/FHEONHEController.h src/FHEONHEController.cpp
                 include/FHEONANNController.h src/FHEONANNController.cpp
             )
-            target_compile_definitions(${model_name} PRIVATE DEFAULT_BATCH_SIZE=${TEST_SIZE} DEFAULT_TEST_SIZE=${TEST_SIZE})
+            target_compile_definitions(${model_name} PRIVATE DEFAULT_TEST_SIZE=${TEST_SIZE})
         endif()
     endforeach()
 endif()
