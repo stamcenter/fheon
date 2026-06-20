@@ -8,7 +8,7 @@ CONTAINER_NAME="fheon_container"
 show_help() {
     echo "FHEON Docker Execution Helper"
     echo "============================="
-    echo "Usage: $0 [command]"
+    echo "Usage: $0 [command] [options]"
     echo ""
     echo "Commands:"
     echo "  build            - Build the Docker image (compiles OpenFHE and FHEON)"
@@ -24,7 +24,21 @@ show_help() {
     echo "  clean-image      - Remove FHEON containers, image, and build cache completely"
     echo "  help             - Show this help message"
     echo ""
+    echo "Options:"
+    echo "  --test_size <n>  - Specify the test dataset size to run (applicable to run-* model commands)"
+    echo ""
 }
+
+# Parse command-line options
+TEST_SIZE=""
+for ((i=1; i<=$#; i++)); do
+    if [ "${!i}" = "--test_size" ]; then
+        next_idx=$((i+1))
+        TEST_SIZE="${!next_idx}"
+    elif [[ "${!i}" == --test_size=* ]]; then
+        TEST_SIZE="${!i#*=}"
+    fi
+done
 
 case "$1" in
     build)
@@ -45,19 +59,19 @@ case "$1" in
         docker run --rm -it --init --name "$CONTAINER_NAME" "$IMAGE_NAME"
         ;;
     run-lenet5)
-        docker run --rm -it --init "$IMAGE_NAME" ./LeNet5
+        docker run --rm -it --init "$IMAGE_NAME" ./LeNet5 ${TEST_SIZE:+--test_size "$TEST_SIZE"}
         ;;
     run-resnet20)
-        docker run --rm -it --init "$IMAGE_NAME" ./ResNet20Optimized
+        docker run --rm -it --init "$IMAGE_NAME" ./ResNet20Optimized ${TEST_SIZE:+--test_size "$TEST_SIZE"}
         ;;
     run-resnet34)
-        docker run --rm -it --init "$IMAGE_NAME" ./ResNet34Optimized
+        docker run --rm -it --init "$IMAGE_NAME" ./ResNet34Optimized ${TEST_SIZE:+--test_size "$TEST_SIZE"}
         ;;
     run-vgg11)
-        docker run --rm -it --init "$IMAGE_NAME" ./VGG11
+        docker run --rm -it --init "$IMAGE_NAME" ./VGG11 ${TEST_SIZE:+--test_size "$TEST_SIZE"}
         ;;
     run-vgg16)
-        docker run --rm -it --init "$IMAGE_NAME" ./VGG16
+        docker run --rm -it --init "$IMAGE_NAME" ./VGG16 ${TEST_SIZE:+--test_size "$TEST_SIZE"}
         ;;
     run-accuracy)
         docker run --rm -it --init "$IMAGE_NAME" bash -c "cd /app/results && python3 accuracy.py"

@@ -48,6 +48,14 @@ auto startIn = get_current_time();
 
 int main(int argc, char *argv[]) {
 
+
+    int defaultBatchSize = DEFAULT_BATCH_SIZE;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--test_size") == 0) {
+            defaultBatchSize = atoi(argv[i + 1]);
+        }
+    }
+
     auto begin_time = startTime();
     printWelcomeMessage();
     int ringDegree = 13;
@@ -156,7 +164,7 @@ int main(int argc, char *argv[]) {
     string mnistPath = "./../images/mnist_images/raw/t10k-images-idx3-ubyte";
     int numImages = 1;
     int imageSize = channels[0]*(imgWidth[0]* imgWidth[0]);
-    int numtoShow = DEFAULT_BATCH_SIZE+INDEX_VALUE;
+    int numtoShow = defaultBatchSize+INDEX_VALUE;
     int reluScale = 10;
     vector<int> dataSizeVector;
     dataSizeVector.push_back((channels[1]*pow(imgWidth[1], 2)));

@@ -54,6 +54,13 @@ Ctext FClayer_relu_block(FHEONHEController &fheonHEController, FHEONANNControlle
 
 int main(int argc, char *argv[]) {
 
+    int defaultBatchSize = DEFAULT_BATCH_SIZE;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--test_size") == 0) {
+            defaultBatchSize = atoi(argv[i + 1]);
+        }
+    }
+
     auto begin_time = startTime();
     printWelcomeMessage();
     int ringDegree = 15;
@@ -68,11 +75,11 @@ int main(int argc, char *argv[]) {
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------VGG16-------------"<< to_string(DEFAULT_BATCH_SIZE) << "--------------------" << endl; 
+    cout << "---------------VGG16-------------"<< to_string(defaultBatchSize) << "--------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     string cifar10tPath = "./../images/cifar-10-batches-bin/test_batch.bin";
-    int numImages = DEFAULT_BATCH_SIZE+INDEX_VALUE;
+    int numImages = defaultBatchSize + INDEX_VALUE;
     int img_cols = 32;
     int img_depth = 3;
     int dataWidth = img_cols;

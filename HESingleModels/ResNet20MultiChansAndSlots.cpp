@@ -58,6 +58,13 @@ vector<int> slotsValues = {14, 14, 14, 14};
 
 int main(int argc, char *argv[]) {
 
+    int defaultBatchSize = DEFAULT_BATCH_SIZE;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--test_size") == 0) {
+            defaultBatchSize = atoi(argv[i + 1]);
+        }
+    }
+
     auto begin_time = startTime();
     printWelcomeMessage();
     int ringDegree = 15;
@@ -72,7 +79,7 @@ int main(int argc, char *argv[]) {
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------------------------RESNET20-------------"<< to_string(DEFAULT_BATCH_SIZE) << "--------------------------" << endl; 
+    cout << "---------------------------------RESNET20-------------"<< to_string(defaultBatchSize) << "--------------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     int img_cols = 32;
@@ -141,7 +148,7 @@ int main(int argc, char *argv[]) {
     printDuration(begin_rotkeygenerate_time, "Rotation KeyGen Time", false);
     /********************************************************************************************************************************************/;
 
-    int numImages = DEFAULT_BATCH_SIZE+INDEX_VALUE;
+    int numImages = defaultBatchSize+INDEX_VALUE;
     dataWidth = img_cols;
     int dataSize = img_depth*pow(img_cols, 2);
     string cifar10tPath = "./../images/cifar-10-batches-bin/test_batch.bin";
