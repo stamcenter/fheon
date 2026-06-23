@@ -67,6 +67,7 @@ public:
     int num_slots;
     int pLWE;
     int mult_depth = 10;
+    int num_bootsraps = 0; 
     // string keys_folder = "/scratch/nnjungle/HEkeys/";
     string keys_folder = "../AllHEkeys/";
     string rotation_prefix = "rotation_keys_"; 
@@ -78,6 +79,8 @@ public:
     CryptoContext<DCRTPoly> getContext() const {
         return context;
     }
+
+    void set_bootstrap_count(int count = 0);
 
     /*
      * Generating context, bootstrapping keys, rotation keys and loading them */

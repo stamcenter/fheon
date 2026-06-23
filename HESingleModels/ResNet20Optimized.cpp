@@ -69,8 +69,8 @@ int main(int argc, char *argv[]) {
     int ringDegree = 15;
     int numSlots = 14;
     int circuitDepth = 11;
-    int dcrtBits = 50;
-    int firstMod = 54;
+    int dcrtBits = 48;
+    int firstMod = 52;
     int digitSize = 4;
     vector<uint32_t> levelBudget = {3, 3};
     int serialize = true;

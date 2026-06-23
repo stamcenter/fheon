@@ -73,8 +73,8 @@ int main(int argc, char *argv[]) {
      int ringDegree = 15;
     int numSlots = 14;
     int circuitDepth = 11;
-    int dcrtBits = 50;
-    int firstMod = 54;
+    int dcrtBits = 48;
+    int firstMod = 52;
     int digitSize = 4;
     vector<uint32_t> levelBudget = {3, 3};
     int serialize = true;
@@ -210,28 +210,28 @@ int main(int argc, char *argv[]) {
         convData = fheonANNController.he_relu(convData, reluScale, dataSize);
         measuringTime.push_back(measureTime(startIn, get_current_time()));
 
-        // cout<< endl<<  "Layer 1" << endl;
+        cout<< endl<<  "Layer 1" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[0], resnet_block1_baisData[0], dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, false, false);
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[1], resnet_block1_baisData[1], dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[2], resnet_block1_baisData[2], dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< endl<< "Layer 2" << endl;
+        cout<< endl<< "Layer 2" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[3], resnet_block1_baisData[3], dataWidth, dataSize, channelValues[0], channelValues[1], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[4], resnet_block1_baisData[4], dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[5], resnet_block1_baisData[5], dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< endl<<  "Layer 3" << endl;
+        cout<< endl<<  "Layer 3" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[6], resnet_block1_baisData[6], dataWidth, dataSize, channelValues[1], channelValues[2], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[7], resnet_block1_baisData[7], dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, convData,  resnet_block1_kernelData[8], resnet_block1_baisData[8], dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< "Classification" << endl;
+        cout<< "Classification" << endl;
         convData = fheonHEController.bootstrap_function(convData);
         startIn = get_current_time();
         convData = fheonANNController.he_globalavgpool(convData, dataWidth,  channelValues[2], avgpoolSize, rotPositions);

@@ -225,6 +225,9 @@ void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBo
     return;
 }
 
+void FHEONHEController::set_bootstrap_count(int count){
+    num_bootsraps = count;
+}
 
 /**
  * @brief Generate all evaluation keys and save them to the keys folder.
@@ -601,6 +604,9 @@ void FHEONHEController::clear_context(int bootstrapping_key_slots) {
  * @return Refreshed ciphertext after bootstrapping.
  */
 Ctext FHEONHEController::bootstrap_function(Ctext& encryptedInput, int encode_level){
+
+    num_bootsraps++;
+    cout << "Bootstrapping ciphertext... " << num_bootsraps << endl;
     Ctext boots_ciphertext = context->EvalBootstrap(encryptedInput, encode_level);
     return boots_ciphertext;
 }
@@ -661,6 +667,7 @@ vector<Ctext> FHEONHEController::batch_bootstrap_function(vector<Ctext>& encrypt
  * @return Ciphertext containing the encrypted input data.
  */
 Ctext FHEONHEController::encrypt_input(vector<double>& inputData) {
+    num_bootsraps = 0;
     Ptext plaintext = context->MakeCKKSPackedPlaintext(inputData, 1, 1);
     plaintext->SetLength(inputData.size());
     auto encryptImage = context->Encrypt(keyPair.publicKey, plaintext);

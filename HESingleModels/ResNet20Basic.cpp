@@ -68,8 +68,8 @@ int main(int argc, char *argv[]) {
      int ringDegree = 15;
     int numSlots = 14;
     int circuitDepth = 11;
-    int dcrtBits = 50;
-    int firstMod = 54;
+    int dcrtBits = 48;
+    int firstMod = 52;
     int digitSize = 4;
     vector<uint32_t> levelBudget = {3, 3};
     int serialize = true;
@@ -142,8 +142,8 @@ int main(int argc, char *argv[]) {
         cout << endl << imageIndex+1 << " - image Read, Normalized and Encrypted with " << image.size() << " Elements" << endl;
         
         /************************************************************************************************ */
-        auto inference_time = startTime();
-        // cout<< "Layer 0" << endl;
+        // auto inference_time = startTime();
+        cout<< "Layer 0" << endl;
         convData = convolution_block(fheonHEController, fheonANNController, "layer0_conv1", convData, dataWidth, dataSize, kernelWidth, padding, striding, img_depth, channelValues[0], reluScale, false);
         dataSize = channelValues[0]*pow(dataWidth, 2);
         reluScale = fheonHEController.read_scaling_value(convData, dataSize);
@@ -154,21 +154,21 @@ int main(int argc, char *argv[]) {
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< endl<<  "Layer 1" << endl;
+        cout<< endl<<  "Layer 1" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block1", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, false, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block2", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block3", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< endl<< "Layer 2" << endl;
+        cout<< endl<< "Layer 2" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block1", convData, dataWidth, dataSize, channelValues[0], channelValues[1], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block2", convData, dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block3", convData, dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
         // fheonHEController.read_minmax(convData, dataSize);
 		// printDuration(inference_time, "run time", false);
 
-        // cout<< endl<<  "Layer 3" << endl;
+        cout<< endl<<  "Layer 3" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block1", convData, dataWidth, dataSize, channelValues[1], channelValues[2], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block2", convData, dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block3", convData, dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
 		// printDuration(inference_time, "run time", false);
         // totalTime(measuringTime);
 
-        // cout<< "Classification" << endl;
+        cout<< "Classification" << endl;
         convData = fheonHEController.bootstrap_function(convData);
         startIn = get_current_time();
         convData = fheonANNController.he_globalavgpool(convData, dataWidth,  channelValues[2], avgpoolSize, rotPositions);
@@ -185,8 +185,8 @@ int main(int argc, char *argv[]) {
         totalTime(measuringTime);
         measuringTime.clear();
 
-        string infereMessage =  to_string(imageIndex + 1)+"  --  "; 
-        printDuration(inference_time, infereMessage, false);
+        // string infereMessage =  to_string(imageIndex + 1)+"  --  "; 
+        // printDuration(inference_time, infereMessage, false);
         decryptedData = fheonHEController.decrypt_data(convData, channelValues[3]);
         printPtextVector(decryptedData);
         fheonHEController.read_inferenced_label(convData, channelValues[3], outFile);
