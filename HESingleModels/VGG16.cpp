@@ -245,14 +245,17 @@ Ctext convolution_relu_block(FHEONHEController &fheonHEController, FHEONANNContr
     auto rawKernelData = load_weights(dataPath+"_weight.csv", outputChannels, 
                         inputChannels, kernelWidth, kernelWidth);
     int inputSize = pow(dataWidth, 2);
+
+    if(bootstrapState){
+        encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
+    }
+
     vector<vector<Ptext>> kernelData;
    for(int i=0; i<outputChannels; i++){
         auto encodeKernel = fheonHEController.encode_kernel_optimized(rawKernelData[i], inputSize);
         kernelData.push_back(encodeKernel);
     }
-    if(bootstrapState){
-        encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
-    }
+    
     auto convbiasEncoded = fheonHEController.encode_bais_input(biasVector, inputSize);
 
     startIn = get_current_time();
@@ -276,12 +279,15 @@ Ctext FClayer_relu_block(FHEONHEController &fheonHEController, FHEONANNControlle
     string dataPath = "./../weights/vgg16/"+layer;
     auto fc_biasVector = load_bias(dataPath+"_bias.csv");
     auto fc_rawKernelData = load_fc_weights(dataPath+"_weight.csv", outputChannels, inputChannels);
+
+    encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
+    
     vector<Ptext> fc_kernelData;
     for(int i=0; i < outputChannels; i++){
         auto encodeWeights = fheonHEController.encode_input(fc_rawKernelData[i]);
         fc_kernelData.push_back(encodeWeights);
     }
-    encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
+    
 
     Ptext fcbaisVector = context->MakeCKKSPackedPlaintext(fc_biasVector, 1);
     Ctext layer_data = fheonANNController.he_linear(encrytedVector, fc_kernelData, fcbaisVector, inputChannels, outputChannels, rotPosition);

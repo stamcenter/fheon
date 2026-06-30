@@ -143,13 +143,13 @@ namespace utils {
      */
     static inline int totalTime(vector<int> measuring){
         int total = accumulate(measuring.begin(), measuring.end(), 0);
-        cout << "------- Circuit Total Time: " << total << endl;
+        cout << "------- Circuit Total Time: " << total << " seconds" << endl;
         return total;
     }
 
     static inline int printTimeWithMessage(string cirStr, vector<int> measuring){
         int total = accumulate(measuring.begin(), measuring.end(), 0);
-        cout << "------- " << cirStr <<" Time: " << total << endl;
+        cout << "------- " << cirStr <<" Time: " << total << " seconds" << endl;
         return total;
     }
   

@@ -534,7 +534,7 @@ namespace utilsdata {
         for(int i = 0; i< outputChannels; i++){
             for(int j=0; j< inputChannels; j++){
                 double cellVal = raw_weights[indexVal];
-                if( abs(cellVal) < 1e-20){
+                if( abs(cellVal) < 1e-10){
                     cellVal = 0.0;
                 }
                 reshapedData[i][j] = cellVal;
