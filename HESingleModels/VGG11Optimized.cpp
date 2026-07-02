@@ -302,7 +302,6 @@ Ctext convolution_relu_block(FHEONHEController &fheonHEController, FHEONANNContr
     auto biasVector = load_bias(dataPath+"_bias.csv");
     auto rawKernelData = load_weights(dataPath+"_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
     
-   
     if(bootstrapState){
         encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
     }
@@ -367,7 +366,7 @@ Ctext FClayer_relu_block(FHEONHEController &fheonHEController, FHEONANNControlle
     measuringTime.push_back(measureTime(startIn, get_current_time()));
     
     if(reluScale != 0){
-        layer_data = fheonHEController.bootstrap_function(layer_data);
+        // layer_data = fheonHEController.bootstrap_function(layer_data);
         
         /** Temporal relu scale for max accuracy */
         reluScale = fheonHEController.read_scaling_value(layer_data, outputChannels);
