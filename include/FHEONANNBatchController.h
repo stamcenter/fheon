@@ -57,7 +57,7 @@ private:
 
 public:
     int num_slots = 1 << 14;
-    int baseIndex = 1024;
+    int baseIndex = 64;
 
     // Constructor must forward CryptoContext to the base class
     FHEONANNBatchController( CryptoContext<DCRTPoly> ctx)
@@ -72,10 +72,10 @@ public:
     vector <int> generate_avgpool_batch_optimized_rotation_positions(int batchSize, int inputWidth, int kernelWidth, int stride=2, 
                             bool globalPooling=false, int rotationIndex=16);
     vector <int> generate_linear_batch_rotation_positions(int batchSize, vector<int> outputSizes, vector<int> inputSizes, int rotationIndex=100);
-    vector <int> generate_batch_inputs_converter_rotation_positions(int batchSize, int inputChannels, int inputWidth);
-   
+    vector <int> generate_batch_inputs_converter_rotation_positions(int batchSize, int inputChannels, int inputWidth, int baseIndex=64);
+    vector <int> generate_normalization_rotation_positions(int inputSize);
 
-    vector<Ctext>   he_batch_convolution(vector<Ctext>& encryptedInput, vector<vector<vector<Ptext>>>& kernelData, vector<Ptext>& biasInputs,
+    vector<Ctext>   he_batch_convolution(FHEONHEController &fheonHEController, vector<Ctext>& encryptedInputs, vector<vector<vector<vector<vector<double>>>>>& rawKernelData, vector<vector<double>>& rawBiasData,
                             int batchSize, int inputWidth, int inputChannels, int outputChannels, int kernelWidth, int padding=0, int stride=1);
     vector<Ctext>   he_batch_convolution_optimized(vector<Ctext>& encryptedInputs, vector<vector<vector<Ptext>>>& kernelData, vector<Ptext>& biasInputs,
                             int batchSize, int inputWidth, int inputChannels, int outputChannels, int stride=1);
@@ -88,15 +88,19 @@ public:
     vector<Ctext>  he_batch_convolution_shortcut_optimized(FHEONHEController &fheonHEController, vector<Ctext>& encryptedInputs, vector<vector<vector<double>>>& rawKernelData, vector<vector<double>>& rawBiasData,
                             int batchSize, int inputWidth, int inputChannels, int outputChannels, int stride);
 
-
-    vector<Ctext> he_batch_avgpool(vector<Ctext>& encryptedInputs,  int batchSize, int inputWidth, int inputChannels, int kernelWidth, int stride=2);
+    vector<Ctext> he_optimzed_batch_avgPool(vector<Ctext>& encryptedInputs,  int batchSize, int inputWidth, int inputChannels, int kernelWidth, int stride=2);
     vector<Ctext> he_batch_globalpool(vector<Ctext>& encryptedInputs, int batchSize, int inputWidth, int inputChannels, int kernelWidth, int rotatePositions);
 
     Ctext he_batch_linear(Ctext& encryptedInput, vector<Ptext>& weightMatrix, Ptext& baisInput, int batchSize, int inputSize, int outputSize, int rotatePositions=100);
+    Ctext he_batch_linear_memory_efficient(Ctext& encryptedInput, vector<Ptext>& weightMatrix, Ptext& baisInput, int batchSize, int inputSize, int outputSize, int rotatePositions=100);
     vector<Ctext> he_batch_linear_multiple_outputs(Ctext& encryptedInput, vector<Ptext>& weightMatrix, Ptext& baisInput, int batchSize, int inputSize, int outputSize);
     vector<Ctext> he_batch_relu(vector<Ctext>& encryptedInputs, vector<int> scaleValues, int inputChannels, int vectorSize, int polyDegree=59); 
-    Ctext he_batch_inputs_converter(vector<Ctext>& encryptedInputs, int batchSize, int inputChannels, int inputWidth);
+    Ctext he_batch_inputs_converter(vector<Ctext>& encryptedInputs, int batchSize, int inputChannels, int inputWidth, int baseIndex=64);
+    Ctext he_batch_inputs_converter_memory_efficient(vector<Ctext>& encryptedInputs, int batchSize, int inputChannels, int inputWidth, int baseIndex=64);
     vector<Ctext> he_batch_sum_ciphertexts(vector<Ctext>& firstEncryptedInputs, vector<Ctext>& secondEncryptedInputs, int inputChannels);
+
+
+    vector<int> generate_backpass_convolution_rotation_positions(int inputSize, int kernelSize);
     
 private:
     Ptext gen_zero_mask(int size, int level); 

@@ -40,27 +40,25 @@
 
 namespace fs = std::filesystem;
 
+/**
+ * @brief Set the global crypto context.
+ *
+ * @param in_context The crypto context to set.
+ */
 void FHEONANNController::setContext(CryptoContext<DCRTPoly>& in_context){
     context = in_context;
 }
 
 /**
- * @brief Generate the rotation positions required for convolution layers in homomorphic encryption.
+ * @brief Generate rotation index positions needed for standard convolution.
  *
- * This function computes the rotation positions needed for performing convolutions
- * on encrypted data. It first calculates the output shape of the convolution layer
- * given the input image dimensions, kernel parameters, padding, and stride, and 
- * then derives the set of rotation positions based on the output width.
- *
- * @param inputWidth        Width of the input image (assuming square images).
- * @param inputChannels   Number of input channels to the convolution layer.
- * @param outputChannels  Number of output channels in the convolution layer.
- * @param kernelWidth      Size of the convolution kernel (assumed square).
- * @param padding     Amount of zero-padding applied around the input image.
- * @param stride       stride length used for the convolution.
- *
- * @return A vector of integers representing the rotation positions required 
- *         to perform the convolution.
+ * @param inputWidth Dimensions of input channel.
+ * @param inputChannels Number of input channels.
+ * @param outputChannels Number of output channels.
+ * @param kernelWidth Dimension of square kernel.
+ * @param padding Size of zero padding.
+ * @param stride Convolution stride.
+ * @return List of unique rotation steps.
  */
 vector <int> FHEONANNController::generate_convolution_rotation_positions(int inputWidth, int inputChannels, int outputChannels,
                                                     int kernelWidth, int padding, int stride){
@@ -105,23 +103,13 @@ vector <int> FHEONANNController::generate_convolution_rotation_positions(int inp
 }
 
 /**
- * @brief Generate the rotation positions required for average pooling layers 
- *        in homomorphic encryption.
+ * @brief Generate rotation index positions needed for average pooling.
  *
- * This function computes the set of rotation positions needed for performing 
- * average pooling operations on encrypted data. It calculates the output 
- * dimensions of the pooling layer using the input width, kernel size, and stride. 
- * For each channel, the output size is multiplied by the squared width to derive 
- * the required rotations. Each row of the pooled feature map corresponds to a 
- * rotation position.
- *
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param kernelWidth     Size of the pooling kernel (assumed square).
- * @param stride      stride length used for the pooling operation.
- * @param inputChannels  Number of input channels to the pooling layer.
- *
- * @return A vector of integers representing the rotation positions required 
- *         for average pooling.
+ * @param inputWidth Dimension of input.
+ * @param kernelWidth Dimension of pooling window.
+ * @param stride Pooling stride.
+ * @param inputChannels Number of channels.
+ * @return List of unique rotation steps.
  */
 vector <int> FHEONANNController::generate_avgpool_rotation_positions(int inputWidth, int kernelWidth,
                 int stride, int inputChannels){
@@ -161,22 +149,14 @@ vector <int> FHEONANNController::generate_avgpool_rotation_positions(int inputWi
 }
 
 /**
- * @brief Generate rotation positions for optimized convolution layers 
- *        in homomorphic encryption.
+ * @brief Generate rotation positions optimized for convolution.
  *
- * This function computes the set of rotation positions required for performing 
- * optimized convolution operations on encrypted data. Unlike the standard 
- * convolution rotation generation, this version is designed to work with 
- * optimized schemes that reduce the requires kernel size of 3, padding =1 and
- * striding = 0
- *
- * @param inputWidth        Width of the input image (assumed square).
- * @param inputChannels   Number of input channels in the convolution layer.
- * @param outputChannels  Number of output channels in the convolution layer.
- * @param stride       stride length used for the convolution.
- * @param stridingType    Define the type of striding to be used (basic, single_channel, multi_channels)
- * @return A vector of integers representing the rotation positions required 
- *         for the optimized convolution.
+ * @param inputWidth Dimension of input.
+ * @param inputChannels Number of input channels.
+ * @param outputChannels Number of output channels.
+ * @param stride Convolution stride.
+ * @param stridingType Type of striding optimization.
+ * @return List of unique rotation steps.
  */
 vector <int> FHEONANNController::generate_optimized_convolution_rotation_positions(
     int inputWidth,  int inputChannels, int outputChannels, int stride, string stridingType){
@@ -270,38 +250,24 @@ vector <int> FHEONANNController::generate_optimized_convolution_rotation_positio
         }
     }
 
-    std::sort(keys_position.begin(), keys_position.end());
-    auto new_end = std::remove(keys_position.begin(), keys_position.end(), 0);
-    new_end = std::unique(keys_position.begin(), keys_position.end());
-    unique(keys_position.begin(), keys_position.end());
-    keys_position.erase(new_end, keys_position.end());
-    std::sort(keys_position.begin(), keys_position.end());
+     std::sort(keys_position.begin(), keys_position.end());
+    keys_position.erase(std::unique(keys_position.begin(), keys_position.end()), keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
     return keys_position;
 }
 
 
 /**
- * @brief Generate rotation positions for optimized average pooling layers 
- *        in homomorphic encryption.
+ * @brief Generate rotation positions optimized for average pooling.
  *
- * This function computes the set of rotation positions needed to perform 
- * optimized average pooling operations on encrypted data. It calculates the 
- * output size of the pooling layer given the input width, kernel size, and 
- * stride, and derives rotation positions across all channels. When global 
- * pooling is enabled, the function generates rotation positions for reducing 
- * each channel to a single value.
- *
- * @param inputWidth        Width of the input feature map (assumed square).
- * @param inputChannels   Number of input channels in the pooling layer.
- * @param kernelWidth      Size of the pooling kernel (assumed square).
- * @param stride       stride length used for the pooling operation.
- * @param globalPooling   Boolean flag indicating whether global average 
- *                        pooling is applied (true = pool entire feature map).
- * @param stridingType    Define the type of striding to be used (basic, single_channel, multi_channels)
- * @param rotationIndex   It is the rotation index for global pooling management
- *
- * @return A vector of integers representing the rotation positions required 
- *         for optimized average pooling.
+ * @param inputWidth Dimension of input.
+ * @param inputChannels Number of channels.
+ * @param kernelWidth Dimension of pooling window.
+ * @param stride Pooling stride.
+ * @param globalPooling Whether it's global average pooling.
+ * @param stridingType Type of striding optimization.
+ * @param rotationIndex Base rotation index.
+ * @return List of unique rotation steps.
  */
 vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(int inputWidth,  int inputChannels, 
                                         int kernelWidth, int stride, bool globalPooling, string stridingType, int rotationIndex){
@@ -409,37 +375,22 @@ vector <int> FHEONANNController::generate_avgpool_optimized_rotation_positions(i
 }
 
 /**
- * @brief Generate rotation positions for fully connected (FC) layers 
- *        in homomorphic encryption.
+ * @brief Generate rotation positions for fully connected linear layers.
  *
- * This function computes the rotation positions required for fully connected 
- * layers in an FHE-based ANN. Rather than generating keys separately for each 
- * FC layer, it uses the maximum number of outputs across all FC layers and the 
- * maximum number of output channels from feature extraction layers. 
- * The rotation keys are then derived by dividing the maximum FC outputs by the 
- * maximum channel outputs, leveraging the fact that rotation keys for ranges 
- * [0 ... maxChannelOutput] are already available from convolution layers.
- *
- * @param maxFCLayeroutputs   Maximum number of outputs across all fully 
- *                            connected layers.
- * @param rotationPositions   Maximum number of output channels already covered 
- *                            by convolution layers.
- *
- * @return A vector of integers representing the rotation positions required 
- *         for fully connected layers.
+ * @param maxFCLayeroutputs Maximum output size.
+ * @param rotationPositions Base rotation steps.
+ * @return List of unique rotation steps.
  */
 vector <int> FHEONANNController::generate_linear_rotation_positions(int maxFCLayeroutputs, int rotationPositions){
     
     vector<int> keys_position;
-    // keys_position.push_back(-3276);
 
     for(int counter=0; counter<maxFCLayeroutputs; counter+=rotationPositions){
-        // int rot_val =counter*rotationPositions;
         keys_position.push_back(-counter);
     }
     
     for(int i=1; i<=rotationPositions; i++){
-         keys_position.push_back(i);
+        //  keys_position.push_back(i);
          keys_position.push_back(-i);
     }
     std::sort(keys_position.begin(), keys_position.end());
@@ -447,39 +398,28 @@ vector <int> FHEONANNController::generate_linear_rotation_positions(int maxFCLay
     new_end = std::unique(keys_position.begin(), keys_position.end());
     unique(keys_position.begin(), keys_position.end());
     keys_position.erase(new_end, keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
     std::sort(keys_position.begin(), keys_position.end());
     return keys_position;
 }
 
 /**
- * @brief Perform a secure convolution operation on encrypted data.
+ * @brief Homomorphic standard convolution layer.
  *
- * This function implements a convolutional layer in the encrypted domain 
- * using homomorphic encryption. Given an encrypted input, convolution kernels, 
- * and a bias term, it applies the convolution operation while respecting the 
- * specified input dimensions, kernel size, padding, and stride. The computation 
- * is performed ciphertext-wise, enabling convolutional neural networks to be 
- * evaluated securely without decryption.
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param kernelData       Convolution kernels represented as a 
- *                         2D vector of plaintexts (one kernel per output channel).
- * @param biasInput        Bias term for each output channel (plaintext).
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param inputChannels    Number of input channels.
- * @param outputChannels   Number of output channels.
- * @param kernelWidth      Width of the convolution kernel (assumed square).
- * @param paddingLen       Amount of zero-padding applied around the input.
- * @param stride        stride length for the convolution.
- *
- * @return Ctext           Ciphertext representing the encrypted result of 
- *                         the convolution operation.
- * 
- * @see generate_conv_rotation_positions()
- * @see generate_optimized_convolution_rotation_positions()
+ * @param encryptedInput Encrypted input ciphertext.
+ * @param kernelData Encoded weights filter matrix.
+ * @param biasInput Encoded bias vector.
+ * @param inputWidth Dimension of input.
+ * @param inputChannels Number of input channels.
+ * @param outputChannels Number of output channels.
+ * @param kernelWidth Dimension of square kernel.
+ * @param paddingLen Padding size.
+ * @param stride Stride size.
+ * @return Encrypted convolution output.
  */
 Ctext FHEONANNController::he_convolution(Ctext& encryptedInput, vector<vector<Ptext>>& kernelData, Ptext& biasInput,
         int inputWidth,  int inputChannels, int outputChannels,  int kernelWidth, int paddingLen, int stride) {
+    auto start_time = startTime();
 
     int kernelSq = kernelWidth * kernelWidth;
     int inputSize = inputWidth * inputWidth;
@@ -560,37 +500,30 @@ Ctext FHEONANNController::he_convolution(Ctext& encryptedInput, vector<vector<Pt
             final_vec.push_back(context->EvalRotate(strided_cipher, -(out_ch * outputSize)));
         }
     }
+    Ctext res = context->EvalAdd(context->EvalAddMany(final_vec), biasInput);
+    final_vec.clear();
     rotated_ciphertexts.clear();
-    // STEP 8 - Add biases and return result
-    return context->EvalAdd(context->EvalAddMany(final_vec), biasInput);;
+    printTiming("Convolution evaluated...", "Conv", start_time);
+    return res;
 }
 
 /**
-* @brief Perform a secure convolution operation with explicit padding 
- *        on encrypted data.
+ * @brief Homomorphic convolution with advanced padding and stride configurations.
  *
- * This function extends the standard secure convolution by explicitly handling 
- * zero-padding within the encrypted domain. The input ciphertext is expanded by 
- * adding zeros around the borders according to the specified padding size, 
- * after which the convolution is carried out as in the traditional setting.
- *
- * @param encryptedInput     Encrypted input feature map (ciphertext).
- * @param kernelData         Convolution kernels represented as a 2D vector 
- *                           of plaintexts.
- * @param biasInput          Bias term for each output channel (plaintext).
- * @param inputWidth         Width of the input feature map (assumed square).
- * @param kernelWidth         Size of the convolution kernel (assumed square).
- * @param padding        Amount of zero-padding to apply.
- * @param stride        stride length for the convolution.
- * @param inputChannels  Number of input channels.
- * @param outputChannels Number of output channels.
- *
- * @return Ctext             Ciphertext representing the encrypted result 
- *                           of the convolution with padding.
- * @see he_convolution()
+ * @param encryptedInput Encrypted input ciphertext.
+ * @param kernelData Pre-encoded filter weight vectors.
+ * @param biasInput Pre-encoded bias input vector.
+ * @param inputWidth Dimensions of the input channels.
+ * @param inputChannels Number of input channels.
+ * @param outputChannels Number of output filter channels.
+ * @param kernelWidth Dimension of the square convolution kernel.
+ * @param padding Size of zero padding to apply.
+ * @param stride Convolution stride.
+ * @return Encrypted output of the convolution layer.
  */
 Ctext FHEONANNController::he_convolution_advanced(Ctext& encryptedInput, vector<vector<Ptext>>& kernelData, Ptext& biasInput, 
             int inputWidth,  int inputChannels, int outputChannels, int kernelWidth, int padding, int stride){
+    auto start_time = startTime();
 
     /** If padding is 0 */    
     if(padding ==0){
@@ -643,50 +576,27 @@ Ctext FHEONANNController::he_convolution_advanced(Ctext& encryptedInput, vector<
         padded_cipher = context->EvalRotate(padded_cipher, -padd_extra);
     }
     Ctext conv_basic_cipher = he_convolution(padded_cipher, kernelData, biasInput, inputWidth, kernelWidth, 
-                                            inputChannels, outputChannels, padding, stride); 
+                                             inputChannels, outputChannels, padding, stride); 
+    printTiming("Advanced convolution evaluated...", "Conv", start_time);
     return conv_basic_cipher;
 }
 
 /**
- * @brief Perform an optimized secure convolution for the special case 
- *        of stride = 1, kernel size = 3, and padding = 1.
+ * @brief Optimized homomorphic convolution using parallel channels.
  *
- * This function implements a convolutional layer in the encrypted domain 
- * using homomorphic encryption, optimized specifically for the case where 
- * stride = 1, kernel size = 3, and padding = 3. By exploiting this fixed 
- * configuration, the function reduces the number of ciphertext rotations, 
- * multiplications, and additions compared to the generic secure convolution 
- * implementation, resulting in improved efficiency. 
- * 
- * It applies single channel striding given the striding value is greater than 1. 
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param kernelData       Convolution kernels represented as a 2D vector 
- *                         of plaintexts.
- * @param biasInput        Bias term for each output channel (plaintext).
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param inputChannels    Number of input channels.
- * @param outputChannels   Number of output channels.
- * @param stride        stride length (must be 1 for this optimized version).
- * @param index            Index of the current kernel or output channel 
- *                         being processed.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the optimized convolution.
- *
- * @note This optimized implementation should only be used when 
- *       stride = 1, kernel size = 3, and padding = 3. For other cases, 
- *       use @ref he_convolution or @ref he_convolution_advanced().
- *
- * @see he_convolution()
- * @see he_convolution_advanced()
- *
- * @warning Supplying parameters outside the supported configuration 
- *          (stride ≠ 1, kernel size ≠ 3, padding ≠ 3) will lead to 
- *          incorrect results.
+ * @param encryptedInput Encrypted input ciphertext.
+ * @param kernelData Pre-encoded filter weight vectors.
+ * @param biasInput Pre-encoded bias input vector.
+ * @param inputWidth Dimensions of the input channels.
+ * @param inputChannels Number of input channels.
+ * @param outputChannels Number of output filter channels.
+ * @param stride Convolution stride.
+ * @param index Optimization index indicator.
+ * @return Encrypted convolution output.
  */
 Ctext FHEONANNController::he_convolution_optimized(Ctext& encryptedInput,  vector<vector<Ptext>>& kernelData, Ptext& biasInput, 
             int inputWidth, int inputChannels, int outputChannels, int stride, int index){
+    auto start_time = startTime();
     
     int kernelSq = 9;
     int inputSize = inputWidth*inputWidth;
@@ -741,34 +651,25 @@ Ctext FHEONANNController::he_convolution_optimized(Ctext& encryptedInput,  vecto
     sumVec.clear();
     kernelSum.clear();
     rotated_ciphertexts.clear();
+    printTiming("Optimized convolution evaluated...", "Conv", start_time);
     return finalResults;
 }
 
 
 /**
- * @brief Perform secure convolution layer evaluation for the special case 
- *        of stride = 1, kernel size = 3, and padding = 1.
- * 
- * If striding is greater than 1, it applies striding across multiple channels simultaneously 
- * using multi_channels approach rather than channel-by-channel. 
- * This approach improves efficiency for FHE-based  deep networks with multiple input channels. 
+ * @brief Optimized convolution supporting multiple packed channels.
  *
- * @param encryptedInput       Encrypted input feature map (ciphertext).
- * @param kernelData           Convolution kernels for the main branch, represented 
- *                             as a 2D vector of plaintexts.
- * @param biasInput            Bias term for the main convolution branch (plaintext).
- * @param inputWidth           Width of the input feature map (assumed square).
- * @param inputChannels        Number of input channels.
- * @param outputChannels       Number of output channels (shared across both branches).
- *
- * @return Ctext               A ciphertexts containing the encrypted  results of the convolution
- *
- * @warning This function assumes that striding and channel-based optimization 
- *          are supported by the encryption scheme. Using unsupported parameters 
- *          may lead to incorrect results.
+ * @param encryptedInput Encrypted input ciphertext.
+ * @param kernelData Pre-encoded filter weight vectors.
+ * @param biasInput Pre-encoded bias input vector.
+ * @param inputWidth Dimensions of the input channels.
+ * @param inputChannels Number of input channels.
+ * @param outputChannels Number of output filter channels.
+ * @return Encrypted convolution output.
  */
 Ctext  FHEONANNController::he_convolution_optimized_with_multiple_channels(Ctext& encryptedInput, vector<vector<Ptext>>& kernelData, 
     Ptext& biasInput,  int inputWidth,  int inputChannels, int outputChannels){
+    auto start_time = startTime();
     
     constexpr int stride = 2;
     constexpr int kernelSq = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
@@ -852,44 +753,24 @@ Ctext  FHEONANNController::he_convolution_optimized_with_multiple_channels(Ctext
     rotatedInputs.clear();
     mainResults.clear();
     convChannelSum.clear();
+    printTiming("Optimized convolution with multiple channels evaluated...", "Conv", start_time);
     return finalMainResult;
 }
 
 /**
- * @brief Perform a secure shortcut convolution (as used in ResNets) 
- *        on encrypted data.
+ * @brief Shortcut connection convolution layer for ResNet skip connections.
  *
- * This function implements the shortcut (or projection) convolution used 
- * in Residual Networks (ResNets). The shortcut convolution adjusts the 
- * dimensions of the input feature map so that it can be added to the 
- * output of a residual block. In the encrypted setting, this is carried 
- * out homomorphically on ciphertexts using pre-encrypted weights.
- *
- * Conceptually, the operation is identically equal to the convolution rather than it uses
- * a kernel size = 1, striding = 2, padding = 1.
- * It is ddefined in ResNet architectures, but performed securely in the FHE domain.
- * We used the single channel striding approach in this implementation. 
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param kernelData       Convolution kernel weights represented as a vector 
- *                         of plaintexts (projection filter).
- * @param biasInput        Bias term for the shortcut convolution (plaintext).
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param inputChannels    Number of input channels.
- * @param outputChannels   Number of output channels (dimension after projection).
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the shortcut convolution.
- *
- * @note This function is a special case of the standard convolution operation, 
- *       optimized for use in residual connections of ResNets.
- *
- * @see he_convolution()
- * @see he_convolution_advanced()
- * @see he_convolution_optimized()
+ * @param encryptedInput Encrypted input ciphertext.
+ * @param kernelData Pre-encoded filter weight vectors.
+ * @param biasInput Pre-encoded bias input vector.
+ * @param inputWidth Dimensions of the input channels.
+ * @param inputChannels Number of input channels.
+ * @param outputChannels Number of output filter channels.
+ * @return Encrypted convolution output.
  */
 Ctext FHEONANNController::he_shortcut_convolution(Ctext& encryptedInput,  vector<Ptext>& kernelData, Ptext& biasInput,  
             int inputWidth, int inputChannels, int outputChannels){
+    auto start_time = startTime();
 
     int width_sq = pow(inputWidth, 2);
     int stride = 2;
@@ -930,53 +811,27 @@ Ctext FHEONANNController::he_shortcut_convolution(Ctext& encryptedInput,  vector
     Ctext finalResults = context->EvalAdd(context->EvalAddMany(final_vec), biasInput);
     final_vec.clear();
     sum_vec.clear();
+    printTiming("Shortcut convolution evaluated...", "Conv", start_time);
     return finalResults;
 }
 
 /**
- * @brief Perform a combined secure convolution with stride-2 and shortcut 
- *        projection for ResNet blocks.
+ * @brief Combined optimized convolution and shortcut branch computation.
  *
- * This function implements a custom operation tailored for ResNet 
- * architectures in the encrypted domain. It simultaneously evaluates:  
- *  1. The main convolution branch with a stride of 2 (downsampling).  
- *  2. The shortcut (projection) branch to match dimensions.  
- *
- * By handling both the strided convolution and the shortcut convolution in 
- * one function, it enables efficient construction of ResNet blocks without 
- * relying on the generic optimized convolution with integrated striding.
- * It uses single channel striding approach. 
- *
- * @param encryptedInput       Encrypted input feature map (ciphertext).
- * @param kernelData           Convolution kernels for the main branch, 
- *                             represented as a 2D vector of plaintexts.
- * @param shortcutKernelData   Convolution kernel weights for the shortcut 
- *                             projection branch (plaintexts).
- * @param biasInput            Bias term for the main convolution branch (plaintext).
- * @param shortcutBiasVector   Bias term for the shortcut branch (plaintext).
- * @param inputWidth           Width of the input feature map (assumed square).
- * @param inputChannels        Number of input channels.
- * @param outputChannels       Number of output channels (shared across both branches).
- *
- * @return vector<Ctext>       A vector of ciphertexts containing both the 
- *                             encrypted results of the main branch and the 
- *                             shortcut branch, which can then be combined 
- *                             (via ciphertext addition) to form the ResNet 
- *                             residual output.
- *
- * @note This function is specific to ResNet-style blocks with stride-2 
- *       downsampling. For other convolution cases, use 
- *       @ref he_convolution() or @ref he_convolution_optimized().
- *
- * @see he_shortcut_convolution()
- * @see he_convolution_optimized()
- *
- * @warning This function assumes stride = 2 in the main convolution branch. 
- *          Supplying different stride values may lead to incorrect results.
+ * @param encryptedInput Input ciphertext.
+ * @param kernelData Convolution weights.
+ * @param shortcutKernelData Shortcut weights.
+ * @param biasVector Convolution bias.
+ * @param shortcutBiasVector Shortcut bias.
+ * @param inputWidth Input dimension.
+ * @param inputChannels Input channels count.
+ * @param outputChannels Output channels count.
+ * @return Vector containing [convolution_output, shortcut_output].
  */
 vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized( const Ctext& encryptedInput, const vector<vector<Ptext>>& kernelData, 
     const vector<Ptext>& shortcutKernelData, Ptext& biasInput, Ptext& shortcutBiasVector,  
     int inputWidth,  int inputChannels, int outputChannels){
+    auto start_time = startTime();
     constexpr int stride = 2;
     constexpr int kernelSq = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
     int outputWidth = inputWidth / stride;
@@ -1052,49 +907,27 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized( const 
     shortcutResults.clear();
     convChannelSum.clear();
     shortcutChannelSum.clear();
+    printTiming("Optimized convolution and shortcut evaluated...", "Conv", start_time);
     return {finalMainResult, finalShortcutResult};
 }
 
 /**
- * @brief Perform a channel-optimized secure convolution and shortcut evaluation 
- *        for ResNet blocks.
+ * @brief Combined optimized convolution and shortcut branch for multiple channels.
  *
- * This function is a custom ResNet-specific operation in the encrypted domain. 
- * It evaluates the shortcut convolution across multiple channels simultaneously 
- * rather than channel-by-channel, while also computing the main convolution 
- * branch with integrated striding. This approach improves efficiency for FHE-based 
- * ResNet implementations by reducing the number of rotations and multiplications.
- * It uses multi channel striding approach. 
- *
- * @param encryptedInput       Encrypted input feature map (ciphertext).
- * @param kernelData           Convolution kernels for the main branch, represented 
- *                             as a 2D vector of plaintexts.
- * @param shortcutKernelData   Convolution kernels for the shortcut branch 
- *                             (plaintexts).
- * @param biasInput            Bias term for the main convolution branch (plaintext).
- * @param shortcutBiasInput    Bias term for the shortcut branch (plaintext).
- * @param inputWidth           Width of the input feature map (assumed square).
- * @param inputChannels        Number of input channels.
- * @param outputChannels       Number of output channels (shared across both branches).
- *
- * @return vector<Ctext>       A vector of ciphertexts containing the encrypted 
- *                             results of both the main branch and shortcut 
- *                             branch, ready to be combined for the ResNet residual output.
- *
- * @note This function is optimized for performing shortcut convolutions across 
- *       multiple channels simultaneously. It is recommended for FHE-based 
- *       ResNet implementations to reduce computation overhead.
- *
- * @see he_convolution_optimized()
- * @see he_shortcut_convolution()
- *
- * @warning This function assumes that striding and channel-based optimization 
- *          are supported by the encryption scheme. Using unsupported parameters 
- *          may lead to incorrect results.
+ * @param encryptedInput Input ciphertext.
+ * @param kernelData Convolution weights.
+ * @param shortcutKernelData Shortcut weights.
+ * @param biasInput Convolution bias.
+ * @param shortcutBiasInput Shortcut bias.
+ * @param inputWidth Input dimension.
+ * @param inputChannels Input channels count.
+ * @param outputChannels Output channels count.
+ * @return Vector containing [convolution_output, shortcut_output].
  */
 vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_multiple_channels( const Ctext& encryptedInput, const vector<vector<Ptext>>& kernelData, 
     const vector<Ptext>& shortcutKernelData, Ptext& biasInput, Ptext& shortcutBiasInput,  
     int inputWidth,  int inputChannels, int outputChannels){
+    auto start_time = startTime();
     constexpr int stride = 2;
     constexpr int kernelSq = 9;  // Assuming 3x3 kernel (kernelWidthSq = 9)
     int outputWidth = inputWidth / stride;
@@ -1192,32 +1025,22 @@ vector<Ctext>  FHEONANNController::he_convolution_and_shortcut_optimized_with_mu
     shortcutResults.clear();
     convChannelSum.clear();
     shortcutChannelSum.clear();
+    printTiming("Optimized convolution and shortcut with multiple channels evaluated...", "Conv", start_time);
     return {finalMainResult, finalShortcutResult};
 }
 
 /**
- * @brief Perform a secure average pooling operation on encrypted data.
+ * @brief Homomorphic standard average pooling layer.
  *
- * This function implements average pooling in the encrypted domain using 
- * homomorphic encryption. Given an encrypted input feature map, it applies 
- * pooling with the specified kernel size and stride, aggregating values 
- * across local regions while keeping the data encrypted.
- * it uses the single channel by channel striding approach.
- * It can also handle poolings of all kernel sizes and striding values. 
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param inputChannels    Number of input channels.
- * @param kernelWidth      Width of the pooling kernel (assumed square).
- * @param stride        stride length used for the pooling operation.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the average pooling operation.
- * 
- * @see generate_avgpool_rotation_positions()
- * @see generate_avgpool_optimized_rotation_positions()
+ * @param encryptedInput Encrypted input ciphertext.
+ * @param inputWidth Dimension of input.
+ * @param inputChannels Number of channels.
+ * @param kernelWidth Dimension of pooling window.
+ * @param stride Pooling stride.
+ * @return Average-pooled encrypted output.
  */
 Ctext FHEONANNController::he_avgpool(Ctext encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int stride){
+    auto start_time = startTime();
 
     int outputWidth = inputWidth/stride;
     int kernelSq = pow(kernelWidth, 2);
@@ -1264,43 +1087,29 @@ Ctext FHEONANNController::he_avgpool(Ctext encryptedInput,  int inputWidth, int 
     Ctext finalResults = context->EvalAddMany(channel_ciphers);
     channel_ciphers.clear();
     rotated_ciphertexts.clear();
+    printTiming("Average pooling evaluated...", "AvgPool", start_time);
     return finalResults;
 }
 
 /**
- * @brief Perform a secure average pooling operation with padding and custom stride 
- *        on encrypted data.
+ * @brief Advanced homomorphic average pooling supporting padding.
  *
- * This function implements average pooling in the encrypted domain using 
- * homomorphic encryption, allowing explicit control over stride and padding. 
- * When `padding` is greater than zero, zeros are added around the input 
- * feature map before pooling. This ensures correct output dimensions and 
- * simulates standard pooling behavior in plaintext settings.
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param outputChannels   Number of output channels.
- * @param kernelWidth       Width of the pooling kernel (assumed square).
- * @param stride      stride length for the pooling operation.
- * @param padding      Amount of zero-padding applied around the input.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the advanced average pooling operation.
- *
- * @note This function is designed for FHE-based ANN implementations where 
- *       padding cannot be applied directly to plaintexts. Rotations and 
- *       additions on ciphertexts simulate the padding and pooling behavior.
- *
- * @see he_avgpool()
- * @see generate_avgpool_rotation_positions()
- * @see generate_avgpool_optimized_rotation_positions()
+ * @param encryptedInput Encrypted input.
+ * @param inputWidth Input dimension.
+ * @param outputChannels Output channels count.
+ * @param kernelWidth Pooling kernel size.
+ * @param stride Pooling stride.
+ * @param padding Pooling padding.
+ * @return Average-pooled encrypted output.
  */
 Ctext FHEONANNController::he_avgpool_advanced(Ctext encryptedInput, int inputWidth, int outputChannels, 
     int kernelWidth, int stride, int padding){
+    auto start_time = startTime();
  
     int encode_level = encryptedInput->GetLevel();
     if(padding ==0){
         auto avgpool_cipher = he_avgpool(encryptedInput, inputWidth, outputChannels, kernelWidth, stride);
+        printTiming("Advanced average pooling evaluated...", "AvgPool", start_time);
         return avgpool_cipher;
     }
     int padded_width = inputWidth + (2*padding);
@@ -1347,35 +1156,22 @@ Ctext FHEONANNController::he_avgpool_advanced(Ctext encryptedInput, int inputWid
         padded_cipher = context->EvalRotate(padded_cipher, -padd_extra);
     }
     Ctext avgpool_cipher = he_avgpool(padded_cipher, inputWidth, outputChannels, kernelWidth, stride); 
+    printTiming("Advanced average pooling evaluated...", "AvgPool", start_time);
     return avgpool_cipher;
 }
 
 /**
- * @brief Perform an optimized secure average pooling operation on encrypted data.
+ * @brief Optimized average pooling using slot shift aggregation.
  *
- * This function implements an optimized version of average pooling in the 
- * encrypted domain using homomorphic encryption. It computes the average 
- * over local regions efficiently, reducing the number of ciphertext rotations 
- * and additions compared to the standard `he_avgpool` implementation.
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param inputChannels    Number of input channels.
- * @param kernelWidth      Width of the pooling kernel (assumed square).
- * @param stride        stride length for the pooling operation.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the optimized average pooling operation.
- *
- * @note This function is optimized for FHE-based ANN implementations where 
- *       reducing the number of rotations and multiplications is critical for 
- *       efficiency.
- *
- * @see he_avgpool()
- * @see he_avgpool__advanced()
- * @see generate_avgpool_optimized_rotation_positions()
+ * @param encryptedInput Encrypted input.
+ * @param inputWidth Input dimension.
+ * @param inputChannels Input channels.
+ * @param kernelWidth pooling kernel size.
+ * @param stride pooling stride.
+ * @return Average-pooled encrypted output.
  */
 Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int stride){
+    auto start_time = startTime();
 
     int kernelSq = pow(kernelWidth, 2);
     int inputSize = pow(inputWidth, 2);
@@ -1418,37 +1214,23 @@ Ctext FHEONANNController::he_avgpool_optimzed(Ctext& encryptedInput,  int inputW
     }
     Ctext finalResult = context->EvalAddMany(channel_ciphers);
     channel_ciphers.clear();
+    printTiming("Optimized average pooling evaluated...", "AvgPool", start_time);
     return finalResult;
 }
 
 
 /**
- * @brief Perform an optimized secure average pooling operation on encrypted data.
+ * @brief Optimized average pooling supporting multiple channels.
  *
- * This function implements an optimized version of average pooling in the 
- * encrypted domain using homomorphic encryption. It computes the average 
- * over local regions efficiently, reducing the number of ciphertext rotations 
- * and additions compared to the standard `he_avgpool` implementation.
- * It allows striding over all output channels at once. Most efficient pooling
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param inputWidth       Width of the input feature map (assumed square).
- * @param inputChannels    Number of input channels.
- * @param kernelWidth      Width of the pooling kernel (assumed square).
- * @param stride        stride length for the pooling operation.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the optimized average pooling operation.
- *
- * @note This function is optimized for FHE-based ANN implementations where 
- *       reducing the number of rotations and multiplications is critical for 
- *       efficiency.
- *
- * @see he_avgpool()
- * @see he_avgpool__advanced()
- * @see generate_avgpool_optimized_rotation_positions()
+ * @param encryptedInput Encrypted input.
+ * @param inputWidth Input dimension.
+ * @param inputChannels Input channels.
+ * @param kernelWidth pooling kernel size.
+ * @param stride pooling stride.
+ * @return Average-pooled encrypted output.
  */
 Ctext FHEONANNController::he_avgpool_optimzed_with_multiple_channels(Ctext& encryptedInput,  int inputWidth, int inputChannels, int kernelWidth, int stride){
+    auto start_time = startTime();
 
     int kernelSq = pow(kernelWidth, 2);
     int inputSize = pow(inputWidth, 2);
@@ -1477,47 +1259,43 @@ Ctext FHEONANNController::he_avgpool_optimzed_with_multiple_channels(Ctext& encr
             sum_cipher = context->EvalRotate(sum_cipher, inputSize);
             channel_ciphers.push_back(sum_cipher);
         }
-        return context->EvalMerge(channel_ciphers);
+        Ctext finalResult = context->EvalMerge(channel_ciphers);
+        printTiming("Optimized average pooling with multiple channels evaluated...", "AvgPool", start_time);
+        return finalResult;
     }
 
     Ctext finalResult = downsample_with_multiple_channels(sum_cipher, inputWidth, stride, inputChannels);
+    printTiming("Optimized average pooling with multiple channels evaluated...", "AvgPool", start_time);
     return finalResult; 
 }
 
-/**** Needed for ResNet Blocks */
+/**
+ * @brief Homomorphically add two ciphertexts together.
+ *
+ * @param firstInput The first encrypted input.
+ * @param secondInput The second encrypted input.
+ * @return Encrypted sum of the inputs.
+ */
 Ctext FHEONANNController::he_sum_two_ciphertexts(Ctext& firstInput, Ctext& secondInput){
+    auto start_time = startTime();
     Ctext sumCipher = context->EvalAdd(firstInput, secondInput);
+    printTiming("Addition evaluated...", "Add", start_time);
     return sumCipher;
 }
 
 /**
- * @brief Perform a secure global average pooling operation on encrypted data.
+ * @brief Homomorphic global average pooling (reduces space dimension to 1).
  *
- * This function reduces each channel of the input feature map to a single value 
- * by averaging all elements in the channel. It is particularly useful in ResNet 
- * architectures where global pooling is applied before the fully connected layer.
- *
- * @param encryptedInput   Encrypted input feature map (ciphertext).
- * @param inputWidth         Width of the input feature map (assumed square).
- * @param outputChannels   Number of output channels.
- * @param kernelWidth       Kernel size used for pooling (typically equal to inputWidth 
- *                         for global pooling, but included for flexibility).
- * @param rotatePositions  Precomputed rotation positions used to perform the 
- *                         homomorphic averaging across all elements in the channel.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the global average pooling operation.
- *
- * @note This function is optimized for FHE-based ResNet implementations. 
- *       Reducing each channel to a single value minimizes the number of 
- *       ciphertexts before the fully connected layer, improving efficiency.
- *
- * @see he_avgpool()
- * @see he_avgpool__advanced()
- * @see he_avgpool_optimzed()
+ * @param encryptedInput Input ciphertext.
+ * @param inputWidth Input dimension.
+ * @param outputChannels Output channels.
+ * @param kernelWidth Pooling window dimension.
+ * @param rotatePositions Rotation positions.
+ * @return Encrypted global pooled output.
  */
 Ctext FHEONANNController::he_globalavgpool(Ctext& encryptedInput,  int inputWidth, 
                         int outputChannels, int kernelWidth, int rotatePositions){
+    auto start_time = startTime();
     
     // int encode_level = encryptedInput->GetLevel();
     /**** STEP 2: Sum the rotated ciphertext */
@@ -1561,40 +1339,27 @@ Ctext FHEONANNController::he_globalavgpool(Ctext& encryptedInput,  int inputWidt
         }
     }
 
-    Ctext fResults = context->EvalAddMany(channel_ciphers);
+    Ctext res = context->EvalMult(context->EvalAddMany(channel_ciphers), masked_cipher);
     channel_ciphers.clear();
     result_ciphers.clear();
-    return context->EvalMult(fResults, masked_cipher);
+    printTiming("Global average pooling evaluated...", "AvgPool", start_time);
+    return res;
 }
 
 /**
- * @brief Perform a secure fully connected (linear) layer operation on encrypted data.
+ * @brief Homomorphic fully connected linear layer.
  *
- * This function implements a fully connected (dense) layer in the encrypted domain 
- * using homomorphic encryption. Given an encrypted input vector (e.g., the output 
- * of convolution or pooling layers), a plaintext weight matrix, and a bias vector, 
- * it computes the linear transformation:
- * 
- * \f[  y = \sum_i w_i \cdot x_i + b   \f]
- *
- * entirely on ciphertexts.
- *
- * @param encryptedInput   Encrypted input vector (ciphertext) of size `inputSize`.
- * @param weightMatrix     Weight matrix for the fully connected layer, represented 
- *                         as a vector of plaintexts.
- * @param biasInput        Bias term for each output neuron (plaintext).
- * @param inputSize        Number of input features.
- * @param outputSize       Number of output neurons.
- * @param rotatePositions  Precomputed rotation positions required to perform 
- *                         the homomorphic summation across input features.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *                         of the fully connected layer.
- *
- * @see generate_linear_rotation_positions()
+ * @param encryptedInput Input ciphertext vector.
+ * @param weightMatrix Weight plaintexts vector.
+ * @param biasInput Bias plaintext.
+ * @param inputSize Size of input dimension.
+ * @param outputSize Size of output dimension.
+ * @param rotatePositions Rotation positions.
+ * @return Encrypted output of linear layer.
  */
 Ctext FHEONANNController::he_linear(Ctext& encryptedInput, vector<Ptext>& weightMatrix, Ptext& biasInput, 
                     int inputSize, int outputSize, int rotatePositions){
+    auto start_time = startTime();
 
     int output_size = weightMatrix.size();
     if(outputSize > output_size){
@@ -1628,35 +1393,26 @@ Ctext FHEONANNController::he_linear(Ctext& encryptedInput, vector<Ptext>& weight
     }
 
     /**** convert everything to one vector. and add the biasInput  ***/
-    Ctext fResults = context->EvalAddMany(result_matrix);
+    Ctext fResults = context->EvalAdd(context->EvalAddMany(result_matrix), biasInput);
     inner_matrix.clear();
     result_matrix.clear();
-    return context->EvalAdd(fResults, biasInput);
+    printTiming("Linear evaluated...", "FC", start_time);
+    return fResults;
 }
 
 /**
- * @brief Perform an optimized secure fully connected (linear) layer operation 
- *        on encrypted data.
+ * @brief Optimized homomorphic fully connected linear layer.
  *
- * This function computes the fully connected layer in the encrypted domain using 
- * homomorphic encryption, optimizing the summation and multiplication of weights 
- * and inputs to reduce the number of rotations and homomorphic operations. 
- * It merges all computed values to produce the final output ciphertext.
- *
- * @param encryptedInput   Encrypted input vector (ciphertext) of size `inputSize`.
- * @param weightMatrix     Weight matrix for the fully connected layer, represented 
- *                         as a vector of plaintexts.
- * @param biasInput        Bias term for each output neuron (plaintext).
- * @param inputSize        Number of input features.
- * @param outputSize       Number of output neurons.
- *
- * @return Ctext           Ciphertext representing the encrypted result 
- *
- * @see he_linear()
- * @see generate_linear_rotation_positions()
+ * @param encryptedInput Input ciphertext vector.
+ * @param weightMatrix Weight plaintexts vector.
+ * @param biasInput Bias plaintext.
+ * @param inputSize Size of input.
+ * @param outputSize Size of output.
+ * @return Encrypted output of linear layer.
  */
 Ctext FHEONANNController::he_linear_optimized(Ctext& encryptedInput, vector<Ptext>& weightMatrix, 
                 Ptext& biasInput, int inputSize, int outputSize){
+    auto start_time = startTime();
 
     int output_size = weightMatrix.size();
     if(outputSize > output_size){
@@ -1670,27 +1426,22 @@ Ctext FHEONANNController::he_linear_optimized(Ctext& encryptedInput, vector<Ptex
     for(int i = 0; i < outputSize; i++){
         inner_matrix.push_back(context->EvalSum(context->EvalMult(encryptedInput, weightMatrix[i]), inputSize));
     }
-    
-    return context->EvalAdd(context->EvalMerge(inner_matrix), biasInput);
+    Ctext res = context->EvalAdd(context->EvalMerge(inner_matrix), biasInput);
+    printTiming("Optimized linear evaluated...", "FC", start_time);
+    return res;
 }
 
 /**
- * @brief Apply a secure ReLU activation on encrypted data using a Chebyshev polynomial approximation.
+ * @brief Homomorphic ReLU activation layer (CKKS polynomial approximation).
  *
- * This function approximates the ReLU function on ciphertexts using the EvalChebyFunction method. 
- * Input values are first scaled to the range [-1, 1] to improve the accuracy of the polynomial approximation. 
- * The `polyDegree` parameter determines the degree of the Chebyshev polynomial used for the approximation.
- *
- * @param encryptedInput   Encrypted input vector (ciphertext).
- * @param scaleValue       Scaling factor to normalize input values to [-1, 1].
- * @param vectorSize       Number of elements in the input vector.
- * @param polyDegree       Degree of the Chebyshev polynomial used for the ReLU approximation.
- *
- * @return Ctext           Ciphertext representing the encrypted result of the ReLU activation.
- *
- * @see EvalChebyFunction()
+ * @param encryptedInput Ciphertext to activate.
+ * @param scaleValue Scaling factor.
+ * @param vectorSize Number of elements in the vector.
+ * @param polyDegree Degree of approximating polynomial.
+ * @return Activated ciphertext.
  */
 Ctext FHEONANNController::he_relu(Ctext& encryptedInput, double scaleValue,  int vectorSize, int polyDegree) {
+    auto start_time = startTime();
     double lowerBound = -1;
     double upperBound = 1;
 
@@ -1699,7 +1450,7 @@ Ctext FHEONANNController::he_relu(Ctext& encryptedInput, double scaleValue,  int
     auto encryptInn = encryptedInput->Clone();
     if(scaleValue > 1){
         // scaleValue = 2*scaleValue;
-        auto mask_data = context->MakeCKKSPackedPlaintext(generate_scale_mask(scaleValue, vectorSize), 1, encryptedInput->GetLevel(), nullptr, nextPowerOf2(vectorSize));
+        auto mask_data = context->MakeCKKSPackedPlaintext(generate_scale_mask(scaleValue, vectorSize), 1, 0, nullptr, nextPowerOf2(vectorSize));
         encryptInn = context->EvalMult(encryptedInput, mask_data);
     }
     else{
@@ -1712,26 +1463,18 @@ Ctext FHEONANNController::he_relu(Ctext& encryptedInput, double scaleValue,  int
                                             lowerBound,
                                             upperBound, 
                                             polyDegree);
+    printTiming("ReLU evaluated...", "ReLU", start_time);
     return relu_result;
 }
 
 /**
- * @brief Perform secure striding on encrypted data using a basic, low-noise approach.
+ * @brief Extract elements from ciphertext using basic striding.
  *
- * This function applies striding to a ciphertext representing an input feature map.
- * It is designed to minimize noise growth in FHE computations, although it may 
- * be slower than optimized striding methods. This function is suitable for 
- * all operations requiring striding in encrypted neural network layers.
- *
- * @param in_cipher    Encrypted input feature map (ciphertext).
- * @param inputWidth     Width of the input feature map (assumed square).
- * @param widthOut    Width of the output feature map after striding.
- * @param stride    stride length for the operation.
- *
- * @return Ctext       Ciphertext representing the strided encrypted feature map.
- *
- * @see he_convolution()
- * @see he_convolution_advanced()
+ * @param in_cipher Input ciphertext.
+ * @param inputWidth Width of input.
+ * @param widthOut Width of output.
+ * @param stride Stride value.
+ * @return Strided output ciphertext.
  */
 Ctext  FHEONANNController::basic_striding(Ctext in_cipher, int inputWidth, int widthOut,  int stride){
     
@@ -1766,6 +1509,18 @@ Ctext  FHEONANNController::basic_striding(Ctext in_cipher, int inputWidth, int w
 
 
 // Apply convolution with batch channel processing
+/**
+ * @brief Perform batch convolution operations on rotated ciphertexts.
+ *
+ * Multiplies rotated ciphertexts with kernel weight masks and sums them up.
+ *
+ * @param rotatedInputs Rotated input ciphertexts.
+ * @param kernelData Encoded kernel weight masks.
+ * @param kernelSq Squared dimension of kernel (k^2).
+ * @param inputSize Size of each input channel.
+ * @param inputChannels Number of input channels.
+ * @return Aggregated batch convolution output.
+ */
 Ctext  FHEONANNController::batch_convolution_operation(const vector<Ctext>& rotatedInputs, const vector<Ptext>& kernelData, int kernelSq, int inputSize,  int inputChannels) {
     
     // Apply kernel to each rotated cipher
@@ -1777,22 +1532,12 @@ Ctext  FHEONANNController::batch_convolution_operation(const vector<Ctext>& rota
 }
 
 /**
- * @brief Perform secure downsampling (striding) on encrypted data over channels.
+ * @brief Downsample ciphertext slots.
  *
- * This function applies striding to reduce the spatial resolution of an encrypted 
- * feature map, effectively performing downsampling. It is designed for use across 
- * all layers requiring striding in FHE-based neural network implementations.
- * It allow downsampling over a single layer
- *
- * @param input        Encrypted input feature map (ciphertext).
- * @param inputWidth   Width of the input feature map (assumed square).
- * @param stride       stride length used for downsampling.
- *
- * @return Ctext       Ciphertext representing the downsampled feature map
- *
- * @see basic_striding()
- * @see he_convolution()
- * @see he_avgpool_advanced()
+ * @param input Input ciphertext.
+ * @param inputWidth Width of input.
+ * @param stride Downsample stride.
+ * @return Downsampled ciphertext.
  */
 Ctext FHEONANNController::downsample(const Ctext& input, int inputWidth, int stride) {
     
@@ -1823,22 +1568,13 @@ Ctext FHEONANNController::downsample(const Ctext& input, int inputWidth, int str
 }
 
 /**
- * @brief Perform secure multi-channel downsampling (striding) on encrypted data.
+ * @brief Downsample multiple channels packed within a ciphertext.
  *
- * This function applies striding across multiple channels of an encrypted feature 
- * map to reduce its spatial resolution. It is optimized to handle all channels 
- * simultaneously, improving efficiency for FHE-based convolutional and pooling layers.
- *
- * @param input        Encrypted input feature map (ciphertext).
- * @param inputWidth   Width of the input feature map (assumed square).
- * @param stride       stride length used for downsampling.
- * @param numChannels  Number of channels in the input feature map.
- *
- * @return Ctext       Ciphertext representing the downsampled feature map across all channels.
- *
- * @see downsample()
- * @see basic_striding()
- * @see he_convolution()
+ * @param input Input ciphertext.
+ * @param inputWidth Input dimension.
+ * @param stride Downsample stride.
+ * @param numChannels Number of channels.
+ * @return Downsampled ciphertext.
  */
 Ctext FHEONANNController::downsample_with_multiple_channels(const Ctext& input, int inputWidth, int stride, int numChannels) {
     
@@ -1884,9 +1620,7 @@ Ctext FHEONANNController::downsample_with_multiple_channels(const Ctext& input, 
         }
     }
 
-    /***
-    * step 3: process per channel
-    ******/ 
+    /*** step 3: process per channel */ 
     // int totalSize = numChannels * outputSize;
     // Ctext downsampledchannels = encryptedzeros->Clone();
     // for (int i = 0; i < numChannels; i++) {
@@ -1902,13 +1636,13 @@ Ctext FHEONANNController::downsample_with_multiple_channels(const Ctext& input, 
 }
 
 /**
- * @brief Generate a mask selecting the first strided elements in a single channel.
+ * @brief Generate binary mask selecting elements after striding.
  *
- * @param width Width of the input.
- * @param inputSize Total number of elements in the input.
- * @param stride stride value for selecting elements.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with selected elements set to 1.
+ * @param width Width.
+ * @param inputSize Input size.
+ * @param stride Stride.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::first_mask(int width, int inputSize, int stride, int level) {
     vector<double> mask(inputSize, 0);
@@ -1924,13 +1658,13 @@ Ptext FHEONANNController::first_mask(int width, int inputSize, int stride, int l
 }
 
 /**
- * @brief Generate a repeating binary mask pattern for a single channel.
+ * @brief Generate binary mask selecting elements at stride positions.
  *
- * @param pattern Number of consecutive ones before inserting zeros.
- * @param inputSize Total number of elements in the input.
- * @param stride Unused here but kept for consistency.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with repeating binary pattern.
+ * @param pattern Stride pattern index.
+ * @param inputSize Size of input.
+ * @param stride Stride size.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_binary_mask(int pattern, int inputSize, int stride, int level) {
     vector<double> mask;
@@ -1952,14 +1686,14 @@ Ptext FHEONANNController::generate_binary_mask(int pattern, int inputSize, int s
 }
 
 /**
- * @brief Generate a mask selecting a specific row in a single channel.
+ * @brief Generate mask for selecting specific row.
  *
  * @param row Row index to select.
  * @param width Width of the input.
  * @param inputSize Total number of elements in the input.
- * @param stride Unused here but kept for consistency.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with the specified row set to 1.
+ * @param stride Stride size.
+ * @param level Encryption level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_row_mask(int row, int width, int inputSize, int stride, int level) {
     vector<double> mask;
@@ -1977,11 +1711,11 @@ Ptext FHEONANNController::generate_row_mask(int row, int width, int inputSize, i
 }
 
 /**
- * @brief Generate a zero mask of given size.
+ * @brief Generate zero-valued mask of specified size.
  *
- * @param size Number of elements in the mask.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with all zeros.
+ * @param size Mask size.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_zero_mask(int size, int level) {
     vector<double> mask(size, 0.0);
@@ -1989,14 +1723,14 @@ Ptext FHEONANNController::generate_zero_mask(int size, int level) {
 }
 
 /**
- * @brief Generate a mask selecting a block of a channel while zeroing other slots.
+ * @brief Generate full channel mask.
  *
- * @param n Channel/block index to select.
- * @param in_elements Number of elements per channel.
- * @param out_elements Number of elements to select in the block.
- * @param numChannels Total number of channels.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with the selected block set to 1.
+ * @param n Mask index.
+ * @param in_elements Input elements count.
+ * @param out_elements Output elements count.
+ * @param numChannels Channels count.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_channel_full_mask(int n, int in_elements, int out_elements, int numChannels, int level) {
 
@@ -2010,12 +1744,12 @@ Ptext FHEONANNController::generate_channel_full_mask(int n, int in_elements, int
 }
 
 /**
- * @brief Generate a zero mask across all channels.
+ * @brief Generate zero mask across multiple channels.
  *
- * @param inputSize Number of elements per channel.
- * @param numChannels Total number of channels.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with all zeros.
+ * @param inputSize Input size.
+ * @param numChannels Channels count.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_zero_mask_channels(int inputSize, int numChannels, int level) {
     
@@ -2025,14 +1759,14 @@ Ptext FHEONANNController::generate_zero_mask_channels(int inputSize, int numChan
 }
 
 /**
- * @brief Generate a mask selecting the first strided row in every channel.
+ * @brief Generate first mask for multiple channels.
  *
- * @param inputWidth Width of each channel.
- * @param inputSize Total number of elements per channel.
- * @param stride stride value for selecting elements.
- * @param numChannels Total number of channels.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with selected elements in all channels.
+ * @param inputWidth Input width.
+ * @param inputSize Input size.
+ * @param stride Stride value.
+ * @param numChannels Channels count.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::first_mask_with_channels(int inputWidth, int inputSize, int stride, int numChannels, int level) {
     // int outputWidth = inputWidth / stride;
@@ -2054,14 +1788,14 @@ Ptext FHEONANNController::first_mask_with_channels(int inputWidth, int inputSize
 }
 
 /**
- * @brief Generate a repeating binary mask across all channels.
+ * @brief Generate binary mask supporting multiple channels.
  *
- * @param pattern Number of consecutive ones before zeros.
- * @param inputSize Number of elements per channel.
- * @param stride Unused here but kept for consistency.
- * @param numChannels Total number of channels.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with repeated binary pattern across channels.
+ * @param pattern Pattern index.
+ * @param inputSize Input size.
+ * @param stride Stride value.
+ * @param numChannels Channels count.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_binary_mask_with_channels(int pattern, int inputSize, int stride,  int numChannels, int level) {
    
@@ -2092,15 +1826,15 @@ Ptext FHEONANNController::generate_binary_mask_with_channels(int pattern, int in
 }
 
 /**
- * @brief Generate a mask selecting a specific row in every channel.
+ * @brief Generate row mask supporting multiple channels.
  *
- * @param row Row index to select.
- * @param width Width of each channel.
- * @param inputSize Number of elements per channel.
- * @param stride Unused here but kept for consistency.
- * @param numChannels Total number of channels.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with the row selected in all channels.
+ * @param row Row index.
+ * @param width Width.
+ * @param inputSize Input size.
+ * @param stride Stride value.
+ * @param numChannels Channels count.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_row_mask_with_channels(int row, int width, int inputSize, int stride, int numChannels, int level) {
     
@@ -2126,13 +1860,13 @@ Ptext FHEONANNController::generate_row_mask_with_channels(int row, int width, in
 }
 
 /**
- * @brief Generate a mask selecting a specific channel while zeroing all others.
+ * @brief Generate channel mask selecting one channel and zeroing others.
  *
- * @param channel Channel index to select.
- * @param outputSize Number of elements per channel.
- * @param numChannels Total number of channels.
- * @param level Encryption level for CKKS plaintext.
- * @return Packed plaintext mask with the selected channel set to 1.
+ * @param channel Channel index.
+ * @param outputSize Channel size.
+ * @param numChannels Channels count.
+ * @param level Ciphertext level.
+ * @return Plaintext mask.
  */
 Ptext FHEONANNController::generate_channel_mask_with_zeros(int channel, int outputSize, int numChannels, int level ){
     

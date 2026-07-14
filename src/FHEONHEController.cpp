@@ -41,6 +41,30 @@ namespace fs = std::filesystem;
 #include "FHEONHEController.h"
 
 /**
+ * @brief Update absolute file paths for FHE context and serialization keys.
+ *
+ * Appends trailing slashes to keys_folder if necessary and constructs full paths
+ * for public, secret, multiplication, and sum keys.
+ */
+void FHEONHEController::update_key_paths() {
+    fs::path base(keys_folder);
+    if (!base.empty() && base.filename() == ".") {
+        base = base.parent_path();
+    }
+    if (!base.empty() && base.string().back() == '/') {
+        keys_folder = base.string();
+    } else if (!base.empty()) {
+        keys_folder = base.string() + "/";
+    }
+
+    crypto_context_file = keys_folder + "crypto-context.bin";
+    multi_key_file = keys_folder + "mult-keys.bin";
+    sum_key_file = keys_folder + "sum-keys.bin";
+    public_key_file = keys_folder + "public-key.bin";
+    secret_key_file = keys_folder + "secret-key.bin";
+}
+
+/**
  * @brief Compute the PQ value, which defines the application's security level.
  *
  * This function calculates the PQ value from the given polynomial, which is used 
@@ -60,22 +84,42 @@ double getlogPQ(const DCRTPoly& poly) {
     return logPQ;
 }
 
+/**
+ * @brief Set the count of bootstrapping operations performed.
+ *
+ * @param count The number of bootstrapping operations to set.
+ */
+void FHEONHEController::set_bootstrap_count(int count){
+    num_bootsraps = count;
+}
+
 
 /**
- * @brief Generate the full FHE context for the project.
+ * @brief Generate FHE crypto context using an HEConfig structure.
  *
- * This function sets up the FHE context with all specified parameters, allowing 
- * fine-grained control over scaling, decomposition, and level budgets. Keys can 
- * be optionally serialized and saved.
+ * @param config Configuration structure containing ring dimension, slots, etc.
+ */
+void FHEONHEController::generate_context(HEConfig config) {
+    if (!config.keysFolder.empty()) {
+        keys_folder = config.keysFolder;
+    }
+    update_key_paths();
+    generate_context(config.ringDim, config.numSlots, config.mlevelBootstrap, config.dcrtBits, 
+                    config.firstMod, config.numDigits, config.levelBudget, config.serialize);
+    return;
+}
+
+/**
+ * @brief Generate the full FHE context with advanced parameters.
  *
- * @param ringDim          Ring dimension.
- * @param numSlots         Number of slots (batch size).
- * @param mlevelBootstrap  Multiplication level after bootstrapping.
- * @param dcrtBits         Scaling factor for DCRT representation.
- * @param firstMod         Scaling factor for the first coefficients.
- * @param numDigits        Number of digits used in key decomposition.
- * @param levelBudget      Vector of budget levels.
- * @param serialize        Whether to serialize and save keys.
+ * @param ringDim Ring dimension for CKKS context.
+ * @param numSlots Number of slots for packing.
+ * @param mlevelBootstrap Multiplication depth/level for bootstrapping.
+ * @param dcrtBits Bit size of the DCRT moduli.
+ * @param firstMod Scaling factor/modulus for the first level.
+ * @param numDigits Number of digits for key switching.
+ * @param levelBudget Level budget for bootstrapping.
+ * @param serialize Whether to serialize context to files.
  */
 void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBootstrap, 
                         int dcrtBits, int firstMod, int numDigits, vector<uint32_t> levelBudget,
@@ -85,6 +129,7 @@ void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBo
     auto secretKeyDist = SPARSE_TERNARY;
 
     ScalingTechnique rescaleTech = FLEXIBLEAUTO;
+    // ScalingTechnique rescaleTech = FLEXIBLEAUTOEXT;
     level_budget = levelBudget;
     num_slots = 1 << numSlots;
     mult_depth = mlevelBootstrap;
@@ -99,7 +144,7 @@ void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBo
     parameters.SetSecurityLevel(lbcrypto::HEStd_NotSet);
     // parameters.SetSecurityLevel(lbcrypto::HEStd_128_classic);
     parameters.SetScalingTechnique(rescaleTech);
-    
+
     circuit_depth = mult_depth + FHECKKSRNS::GetBootstrapDepth(level_budget, secretKeyDist);
     parameters.SetMultiplicativeDepth(circuit_depth);
 
@@ -145,24 +190,17 @@ void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBo
         keys_serialization();
     }
 
-
-    #include <pthread.h>
-#include <sched.h>
-
-
+    context_loaded = false;
     return;
 }
 
 /**
- * @brief Simplified version of generate_context using standard values for unspecified parameters.
+ * @brief Generate a standard FHE context with defaults.
  *
- * This function sets up the FHE context with default parameters for all unspecified 
- * values, simplifying context generation for typical use cases.
- *
- * @param ringDim          Ring dimension.
- * @param numSlots         Number of slots (batch size).
- * @param mlevelBootstrap  Multiplication level after bootstrapping.
- * @param serialize        Whether to serialize and save keys.
+ * @param ringDim Ring dimension for CKKS context.
+ * @param numSlots Number of slots for packing.
+ * @param mlevelBootstrap Multiplication depth/level for bootstrapping.
+ * @param serialize Whether to serialize context to files.
  */
 void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBootstrap, bool serialize) {
     CCParams<CryptoContextCKKSRNS> parameters;
@@ -219,18 +257,17 @@ void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBo
 
    if(serialize){
         write_to_file(keys_folder + "/mult_depth.txt", to_string(mult_depth));
+        write_to_file(keys_folder + "/num_slots.txt", to_string(num_slots));
         write_to_file(keys_folder + "/level_budget.txt", to_string(level_budget[0]) + "," + to_string(level_budget[1]));
         keys_serialization();
     }
+    context_loaded = false;
     return;
 }
 
 
 /**
- * @brief Generate all evaluation keys and save them to the keys folder.
- *
- * This function generates all necessary evaluation keys for the FHE context 
- * and serializes them into the designated keys folder for later use.
+ * @brief Serialize generated FHE keys (public, secret, mult, sum) to files.
  */
 
 void FHEONHEController::keys_serialization(){
@@ -238,20 +275,21 @@ void FHEONHEController::keys_serialization(){
     cout << "------------------------------------------------------------" << endl;
     cout << "Now serializing keys ..." << endl;
 
-    if (!fs::exists(keys_folder)) {
-        if (!fs::create_directory(keys_folder)) {
+    fs::path keysDir = keys_folder;
+    if (!fs::exists(keysDir)) {
+        if (!fs::create_directories(keysDir)) {
             std::cerr << "Failed to create directory: " << keys_folder << std::endl;
             return;
         }
     }
 
-    if (!Serial::SerializeToFile(keys_folder + "/crypto-context.bin", context, SerType::BINARY)) {
+    if (!Serial::SerializeToFile(crypto_context_file, context, SerType::BINARY)) {
         cerr << "Error writing serialization of the crypto context to crypto-context.bin" << endl;
     } else {
         cout << "Crypto Context have been serialized" << std::endl;
     }
 
-    ofstream multKeyFile(keys_folder + "/mult-keys.bin", ios::out | ios::binary);
+    ofstream multKeyFile(multi_key_file, ios::out | ios::binary);
     if (multKeyFile.is_open()) {
         if (!context->SerializeEvalMultKey(multKeyFile, SerType::BINARY)) {
             cerr << "Error writing eval mult keys" << std::endl;
@@ -265,7 +303,7 @@ void FHEONHEController::keys_serialization(){
         exit(1);
     }
 
-    ofstream sumKeysFile(keys_folder + "/sum-keys.bin", ios::out | ios::binary);
+    ofstream sumKeysFile(sum_key_file, ios::out | ios::binary);
     if (sumKeysFile.is_open()) {
         if (!context->SerializeEvalSumKey(sumKeysFile, SerType::BINARY)) {
             cerr << "Error writing sum keys" << std::endl;
@@ -277,13 +315,13 @@ void FHEONHEController::keys_serialization(){
         exit(1);
     }
 
-    if (!Serial::SerializeToFile(keys_folder + "/public-key.bin", keyPair.publicKey, SerType::BINARY)) {
+    if (!Serial::SerializeToFile(public_key_file, keyPair.publicKey, SerType::BINARY)) {
         cerr << "Error writing serialization of public key to public-key.bin" << endl;
     } else {
         cout << "Public Key has been serialized" << std::endl;
     }
 
-    if (!Serial::SerializeToFile(keys_folder + "/secret-key.bin", keyPair.secretKey, SerType::BINARY)) {
+    if (!Serial::SerializeToFile(secret_key_file, keyPair.secretKey, SerType::BINARY)) {
         cerr << "Error writing serialization of public key to secret-key.bin" << endl;
     } else {
         cout << "Secret Key has been serialized" << std::endl;
@@ -291,44 +329,69 @@ void FHEONHEController::keys_serialization(){
     return;
 }
 
+
 /**
- * @brief Load all serialized keys from the storage folder.
+ * @brief Load or generate FHE context based on configuration.
  *
- * This function reads and loads all keys that were previously serialized 
- * and stored in files, typically from the "sskeys" folder.
+ * @param config Configuration parameters for initialization.
+ * @param loadContext If true, load context and keys from files; if false, generate new ones.
  */
-void FHEONHEController::load_context(bool verbose) {
+void FHEONHEController::load_context(HEConfig config, bool loadContext){
+    if (!config.keysFolder.empty()) {
+        keys_folder = config.keysFolder;
+    }
+    update_key_paths();
+    if (loadContext) {
+        load_context();
+    } else {
+        generate_context(config);
+    }
+}
+
+
+/**
+ * @brief Load serialized FHE context and keys from default paths.
+ */
+void FHEONHEController::load_context() {
     
     context->ClearEvalMultKeys();
     context->ClearEvalAutomorphismKeys();
     CryptoContextFactory<lbcrypto::DCRTPoly>::ReleaseAllContexts();
 
     cout << "------------------------------------------------------------" << endl;
-    if (verbose) cout << "Reading serialized context..." << endl;
+    cout << "Loading context from: " << keys_folder << endl;
+    cout << "------------------------------------------------------------" << endl;
 
-    if (!Serial::DeserializeFromFile(keys_folder + "/crypto-context.bin", context, SerType::BINARY)) {
-        cerr << "I cannot read serialized data from: " << keys_folder + "/crypto-context.bin" << endl;
+    if (utils::verbose_level >= 1) {
+        cout << "------------------------------------------------------------" << endl;
+        cout << "Reading serialized context..." << endl;
+    }
+
+    if (!Serial::DeserializeFromFile(crypto_context_file, context, SerType::BINARY)) {
+        cerr << "I cannot read serialized data from: " << crypto_context_file << endl;
         exit(1);
     }
 
     PublicKey<DCRTPoly> clientPublicKey;
-    if (!Serial::DeserializeFromFile(keys_folder + "/public-key.bin", clientPublicKey, SerType::BINARY)) {
+    if (!Serial::DeserializeFromFile(public_key_file, clientPublicKey, SerType::BINARY)) {
         cerr << "I cannot read serialized data from public-key.bin" << endl;
         exit(1);
     }
 
     PrivateKey<DCRTPoly> serverSecretKey;
-    if (!Serial::DeserializeFromFile(keys_folder + "/secret-key.bin", serverSecretKey, SerType::BINARY)) {
-        cerr << "I cannot read serialized data from secret-key.bin" << endl;
-        exit(1);
+    if (Serial::DeserializeFromFile(secret_key_file, serverSecretKey, SerType::BINARY)) {
+        keyPair.secretKey = serverSecretKey;
+    } else {
+        if (utils::verbose_level >= 1) {
+            cout << "Warning: Could not read secret-key.bin. Private key not loaded." << endl;
+        }
     }
 
     keyPair.publicKey = clientPublicKey;
-    keyPair.secretKey = serverSecretKey;
 
-    std::ifstream multKeyIStream(keys_folder + "/mult-keys.bin", ios::in | ios::binary);
+    std::ifstream multKeyIStream(multi_key_file, ios::in | ios::binary);
     if (!multKeyIStream.is_open()) {
-        cerr << "Cannot read serialization from " << "mult-keys.bin" << endl;
+        cerr << "Cannot read serialization from " << multi_key_file << endl;
         exit(1);
     }
     if (!context->DeserializeEvalMultKey(multKeyIStream, SerType::BINARY)) {
@@ -336,9 +399,9 @@ void FHEONHEController::load_context(bool verbose) {
         exit(1);
     }
 
-    ifstream sumKeyIStream(keys_folder + "/sum-keys.bin", ios::in | ios::binary);
+    ifstream sumKeyIStream(sum_key_file, ios::in | ios::binary);
     if (!sumKeyIStream.is_open()) {
-        cerr << "Cannot read serialization from " << "sum-keys.bin" << std::endl;
+        cerr << "Cannot read serialization from " << sum_key_file << std::endl;
         exit(1);
     }
     if (!context->DeserializeEvalSumKey(sumKeyIStream, SerType::BINARY)) {
@@ -354,66 +417,65 @@ void FHEONHEController::load_context(bool verbose) {
     uint32_t levelsUsedBeforeBootstrap = mult_depth;
     circuit_depth = levelsUsedBeforeBootstrap + FHECKKSRNS::GetBootstrapDepth(approxBootstrapDepth, level_budget, SPARSE_TERNARY);
 
-    if (verbose) cout << "Circuit depth: " << circuit_depth << ", available multiplications: " << levelsUsedBeforeBootstrap - 2 << endl;
+    num_slots = stoi(read_from_file(keys_folder + "/num_slots.txt"));
+    if (utils::verbose_level >= 1) {
+        cout << "Setting up bootstrapping for " << num_slots << " slots..." << endl;
+    }
+    context->EvalBootstrapSetup(level_budget, bsgsDim, num_slots);
 
-    cout << "Context Loaded" << endl;
-    cout << "------------------------------------------------------------" << endl;
+    if (utils::verbose_level >= 1) {
+        cout << "Circuit depth: " << circuit_depth << ", available multiplications: " << levelsUsedBeforeBootstrap - 2 << endl;
+        cout << "Context Loaded" << endl;
+        cout << "------------------------------------------------------------" << endl;
+    }
+    context_loaded = true;
 }
 
 /**
- * @brief Generate the bootstrapping keys for the FHE context.
+ * @brief Generate evaluation keys required for bootstrapping.
  *
- * This function generates bootstrapping keys for the specified number of slots. 
- * The generated keys can be optionally serialized and saved to a file.
- *
- * @param bootstrap_slots  Number of bootstrapping slots.
- * @param filename         Filename to use when saving the keys.
- * @param serialize        Whether to serialize and save the bootstrapping keys.
- * @param sumkey           Whether to generate sum keys.    
+ * @param bootstrap_slots Number of slots reserved for bootstrapping.
+ * @param filename Base filename/directory path for serialization.
+ * @param serialize If true, serialize and save keys to disk.
  */
-void FHEONHEController::generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize, bool sumkey) {
-    
-    int numSlots = 1<<bootstrap_slots;
+void FHEONHEController::generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize) {
+    // Instead, (re-)run the bootstrap setup for the specific slot count used at this
+    // layer boundary so the precomputations are valid when EvalBootstrap is called.
+    uint32_t numSlots = context->GetRingDimension() / 2;
+    // Setup bootstrap precomputations for the exact slot count
     context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
+    // Generate bootstrap keys for the secret key
     context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
+    // Ensure relinearization keys exist (safe to call, OpenFHE will ignore duplicates)
     context->EvalMultKeyGen(keyPair.secretKey);
-    if(sumkey){
-        context->EvalSumKeyGen(keyPair.secretKey);
-    }
-
-    if(serialize){
-        ofstream multKeysFile(keys_folder + mult_prefix + filename, ios::out | ios::binary);
-        if (multKeysFile.is_open()) {
-            if (!context->SerializeEvalMultKey(multKeysFile, SerType::BINARY)) {
-                cerr << "Error writing mult keys" << std::endl;
-                exit(1);
-            }
-            cout << "mult keys \"" << filename << "\" have been serialized" << std::endl;
-        } else {
-            cerr << "Error serializing mult keys" << keys_folder + mult_prefix + filename << std::endl;
-            exit(1);
-        }
-    }
 }
 
 
 /**
- * @brief Generate and serialize rotation keys for the FHE context.
+ * @brief Generate evaluation keys for homomorphic rotation operations.
  *
- * This function generates rotation keys for the specified rotation positions. 
- * The generated keys can be optionally serialized and saved to a file.
- *
- * @param rotations  Vector of rotation positions to generate keys for.
- * @param filename   Filename to use when saving the rotation keys.
- * @param serialize  Whether to serialize and save the rotation keys.
+ * @param rotations List of rotation step sizes to generate keys for.
+ * @param filename Base filename/directory path for serialization.
+ * @param serialize If true, serialize and save keys to disk.
+ * @param sum_key If true, generate additional keys required for evaluation sum.
  */
-void FHEONHEController::generate_rotation_keys(const vector<int> rotations, std::string filename, bool serialize) {
-   
+void FHEONHEController::generate_rotation_keys(const vector<int> rotations, std::string filename, bool serialize, bool sum_key) {
+    if (context_loaded) {
+        load_rotation_keys(filename, false);
+        return;
+    }
+    
     if (serialize && filename.size() == 0) {
         cout << "Filename cannot be empty when serializing rotation keys." << endl;
         return;
     }
+  
     context->EvalRotateKeyGen(keyPair.secretKey, rotations);
+    if (sum_key) {
+        // Generate sum keys when requested (useful for fully-connected layers)
+        context->EvalSumKeyGen(keyPair.secretKey);
+    }
+    
     if (serialize) {
         ofstream rotationKeyFile(keys_folder + rotation_prefix + filename, ios::out | ios::binary);
         if (rotationKeyFile.is_open()) {
@@ -431,63 +493,47 @@ void FHEONHEController::generate_rotation_keys(const vector<int> rotations, std:
 
 
 /**
- * @brief Generate and serialize both rotation keys and bootstrapping keys for the FHE context.
+ * @brief Generate both bootstrapping and rotation keys.
  *
- * This function generates rotation keys for the specified rotation positions and 
- * bootstrapping keys for the given number of slots. The generated keys can be 
- * optionally serialized and saved to a file.
- *
- * @param rotations        Vector of rotation positions to generate keys for.
- * @param bootstrap_slots  Number of bootstrapping slots.
- * @param filename         Filename to use when saving the keys.
- * @param serialize        Whether to serialize and save the generated keys.
+ * @param rotations List of rotation step sizes.
+ * @param bootstrap_slots Number of slots for bootstrapping.
+ * @param filename Base filename/directory path.
+ * @param serialize If true, serialize keys to disk.
+ * @param sum_key If true, generate evaluation sum keys.
  */
-void FHEONHEController::generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename,  bool serialize, bool sumkey) {
-    if (serialize && filename.empty()) {
-        cout << "Filename cannot be empty when serializing bootstrapping and rotation keys." << endl;
+void FHEONHEController::generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename,  bool serialize, bool sum_key) {
+    if (context_loaded) {
+        // load_bootstrapping_and_rotation_keys(bootstrap_slots, filename, false);
         return;
     }
 
-    generate_bootstrapping_keys(bootstrap_slots, filename, serialize, sumkey);
-    generate_rotation_keys(rotations, filename, serialize);
+    generate_bootstrapping_keys(bootstrap_slots, filename, serialize);
+    if(sum_key){
+        context->EvalSumKeyGen(keyPair.secretKey);
+    }
+    generate_rotation_keys(rotations, filename, serialize, sum_key);
 }
 
 
 /**
- * @brief Load previously generated bootstrapping and rotation keys from storage.
+ * @brief Load both bootstrapping and rotation evaluation keys from files.
  *
- * This function loads bootstrapping and rotation keys that were previously 
- * generated and serialized, using the specified filename. Verbose mode can 
- * be enabled to display loading details.
- *
- * @param bootstrap_slots  Number of bootstrapping slots.
- * @param filename         Filename from which to load the keys.
- * @param verbose          Whether to display detailed loading information.
- */
-
-
-/**
- * @brief Load previously generated bootstrapping and rotation keys from storage.
- *
- * This function loads bootstrapping and rotation keys that were previously 
- * generated and serialized, using the specified filename. Verbose mode can 
- * be enabled to display loading details.
- *
- * @param bootstrap_slots  Number of bootstrapping slots.
- * @param filename         Filename from which to load the keys.
- * @param verbose          Whether to display detailed loading information.
+ * @param bootstrap_slots Number of slots for bootstrapping.
+ * @param filename Base filename/path.
+ * @param verbose If true, print loading progress.
  */
 void FHEONHEController::load_bootstrapping_and_rotation_keys(int bootstrap_slots, const string& filename, bool verbose) {
-    if (verbose) cout << endl << "Loading bootstrapping and rotations keys from " << filename << "..." << endl;
+    if (utils::verbose_level >= 1) cout << endl << "    Loading bootstrapping and rotations keys from " << filename << "..." << endl;
 
     // int numSlots =  1 << bootstrap_slots;
     // context->EvalBootstrapSetup(level_budget, bsgsDim, numSlots);
-    // context->EvalBootstrapKeyGen(keyPair.secretKey, numSlots);
-    // context->EvalSumKeyGen(keyPair.secretKey);
 
-    if (verbose)  cout << "(1/4) Bootstrapping precomputations completed!" << endl;
+    context->ClearEvalMultKeys();
+	context->ClearEvalAutomorphismKeys();
+
+    if (utils::verbose_level >= 1)  cout << "    (1/4) Bootstrapping precomputations completed!" << endl;
     
-    ifstream multKeyIStream(keys_folder +   mult_prefix + filename, ios::in | ios::binary);
+    ifstream multKeyIStream(multi_key_file, ios::in | ios::binary);
     if (!multKeyIStream.is_open()) {
         cerr << "Cannot read serialization from " << keys_folder+ "/" << mult_prefix << filename << std::endl;
         exit(1);
@@ -496,7 +542,7 @@ void FHEONHEController::load_bootstrapping_and_rotation_keys(int bootstrap_slots
         cerr << "Could not deserialize eval rot key file" << std::endl;
         exit(1);
     }
-    if (verbose)  cout << "(2/4) MultKey deserialized and loaded!" << endl;
+    if (utils::verbose_level >= 1)  cout << "    (2/4) MultKey deserialized and loaded!" << endl;
 
     ifstream rotKeyIStream(keys_folder + rotation_prefix + filename, ios::in | ios::binary);
     if (!rotKeyIStream.is_open()) {
@@ -507,22 +553,58 @@ void FHEONHEController::load_bootstrapping_and_rotation_keys(int bootstrap_slots
         cerr << "Could not deserialize eval rot key file" << std::endl;
         exit(1);
     }
-    if (verbose) cout << "(4/4) Rotation keys deserialized and loaded!" << endl;
-    if (verbose) cout << endl;
+    if (utils::verbose_level >= 1) cout << "    (3/4) Rotation keys deserialized and loaded!" << endl;
+    if (utils::verbose_level >= 1) cout << "    (4/4) Loaded keys for " << filename  << endl;
 }
 
 /**
- * @brief Load rotation keys from a specified file.
+ * @brief Helper function to read evaluation keys from file.
  *
- * This function loads rotation keys that were previously generated and serialized 
- * from the given filename. Verbose mode can be enabled to display loading details.
+ * @param crypto_context Context to associate keys with.
+ * @param rot_file Path to rotation keys file.
+ * @return Configured crypto context.
+ */
+CryptoContext<DCRTPoly> FHEONHEController::read_evaluation_keys(CryptoContext<DCRTPoly> crypto_context, const string &rot_file) {
+
+    // Clear any existing eval keys in the provided context to avoid conflicts
+    crypto_context->ClearEvalMultKeys();
+    crypto_context->ClearEvalAutomorphismKeys();
+    CryptoContextFactory<lbcrypto::DCRTPoly>::ReleaseAllContexts();
+    if (utils::verbose_level >= 1) cout << "    (1/4) Clear previous Keys and context!" << endl;
+
+    // Open files in READ mode
+    ifstream multkey_file(multi_key_file, ios::in | ios::binary);
+    if (!multkey_file.is_open()) {
+        throw std::runtime_error("Failed to open mult key file: " + multi_key_file);
+    }
+    if (!crypto_context->DeserializeEvalMultKey(multkey_file, SerType::BINARY)) {
+        throw std::runtime_error("Failed to deserialize relinearization key from " + multi_key_file);
+    }
+    if (utils::verbose_level >= 1) cout << "    (2/4) MultKey deserialized and loaded!" << endl;
+
+    ifstream rotkey_file(keys_folder + rotation_prefix + rot_file, ios::in | ios::binary);
+    if (!rotkey_file.is_open()) {
+        throw std::runtime_error("Failed to open rotation key file: " + keys_folder + rotation_prefix + rot_file);
+    }
+    if (!crypto_context->DeserializeEvalAutomorphismKey(rotkey_file, SerType::BINARY)) {
+        throw std::runtime_error("Failed to deserialize rotation keys from " + keys_folder + rotation_prefix + rot_file);
+    }
+    if (utils::verbose_level >= 1) cout << "    (3/4) Rotation keys deserialized and loaded!" << endl;
+    if (utils::verbose_level >= 1) cout << "    (4/4) Loaded context for " << rot_file  << endl;
+
+    return crypto_context;
+}
+
+
+/**
+ * @brief Load rotation evaluation keys from file.
  *
- * @param filename  Filename from which to load the rotation keys.
- * @param verbose   Whether to display detailed loading information.
+ * @param filename Path to rotation keys file.
+ * @param verbose If true, print loading progress.
  */
 void FHEONHEController::load_rotation_keys(const string& filename, bool verbose) {
 
-    if (verbose) cout << endl << "Loading rotations keys from " << filename << "..." << endl;
+    if (utils::verbose_level >= 1) cout << endl << "Loading rotations keys from " << filename << "..." << endl;
     
     ifstream rotKeyIStream(keys_folder + rotation_prefix + filename, ios::in | ios::binary);
     if (!rotKeyIStream.is_open()) {
@@ -534,17 +616,14 @@ void FHEONHEController::load_rotation_keys(const string& filename, bool verbose)
         exit(1);
     }
 
-    if (verbose) {
+    if (utils::verbose_level >= 1) {
         cout << "(1/1) Rotation keys read!" << endl;
         cout << endl;
     }
 }
 
 /**
- * @brief Clear all rotation keys stored in the FHE context.
- *
- * This function removes all previously stored rotation keys from the context, 
- * allowing new rotation keys to be generated without conflicts.
+ * @brief Clear rotation evaluation keys from current context.
  */
 void FHEONHEController::clear_rotation_keys() {
     context->ClearEvalMultKeys();
@@ -553,12 +632,9 @@ void FHEONHEController::clear_rotation_keys() {
 }
 
 /**
- * @brief Clear all bootstrapping and rotation keys in the FHE context.
+ * @brief Clear bootstrapping and rotation keys from current context.
  *
- * This function removes all stored bootstrapping and rotation keys up to the 
- * specified number of bootstrapping slots, allowing new keys to be generated.
- *
- * @param bootstrap_num_slots  Number of bootstrapping slots to clear.
+ * @param bootstrap_num_slots Number of bootstrapping slots.
  */
 void FHEONHEController::clear_bootstrapping_and_rotation_keys(int bootstrap_num_slots) {
     //This lines would free more or less 1GB or precomputations, but requires access to the GetFHE function
@@ -572,12 +648,9 @@ void FHEONHEController::clear_bootstrapping_and_rotation_keys(int bootstrap_num_
 
 
 /**
- * @brief Clear the entire FHE context, including multiplication, bootstrapping, and rotation keys.
+ * @brief Clear keys and release crypto context.
  *
- * This function removes all keys stored in the context, allowing a fresh setup 
- * or reinitialization of the FHE environment.
- *
- * @param bootstrapping_key_slots  Number of bootstrapping slots to clear.
+ * @param bootstrapping_key_slots Number of bootstrapping slots.
  */
 void FHEONHEController::clear_context(int bootstrapping_key_slots) {
     
@@ -589,44 +662,31 @@ void FHEONHEController::clear_context(int bootstrapping_key_slots) {
 
 
 /**
- * @brief Bootstrap a ciphertext to refresh its noise budget.
+ * @brief Perform homomorphic bootstrapping (refreshing noise level) on ciphertext.
  *
- * This function applies bootstrapping to the input ciphertext, effectively 
- * reducing accumulated noise and enabling further homomorphic operations. 
- * The bootstrapping level controls the depth and parameters used.
- *
- * @param encryptedInput  Ciphertext to be bootstrapped.
- * @param encode_level    Bootstrapping level as defined in OpenFHE (e.g., 1 or 2).
- *
- * @return Refreshed ciphertext after bootstrapping.
+ * @param encryptedInput Ciphertext to bootstrap.
+ * @param encode_level Level budget for encoding.
+ * @return Refreshed ciphertext.
  */
 Ctext FHEONHEController::bootstrap_function(Ctext& encryptedInput, int encode_level){
+    num_bootsraps++;
+    auto start_bootstrap = startTime();
     Ctext boots_ciphertext = context->EvalBootstrap(encryptedInput, encode_level);
+    printBootstrapTiming("    Bootstrapping ciphertext... " + to_string(num_bootsraps), start_bootstrap);
     return boots_ciphertext;
 }
 
 /**
- * @brief Bootstrap batched ciphertext to refresh the noise budget in all of them.
+ * @brief Perform parallel bootstrapping on a batch of ciphertexts.
  *
- * This function applies bootstrapping to the input ciphertexts over the batch, effectively 
- * reducing accumulated noise and enabling further homomorphic operations. 
- * The bootstrapping level controls the depth and parameters used.
- *
- * @param encryptedInput  Ciphertext to be bootstrapped.
- * @param encode_level    Bootstrapping level as defined in OpenFHE (e.g., 1 or 2).
- *
- * @return Refreshed ciphertext after bootstrapping.
+ * @param encryptedInputs Vector of ciphertexts to bootstrap.
+ * @param inputChannels Number of channels/ciphertexts.
+ * @param encode_level Level budget.
+ * @return Vector of refreshed ciphertexts.
  */
 
-// vector<Ctext> FHEONHEController::batch_bootstrap_function(vector<Ctext>& encryptedInputs, int inputChannels, int encode_level){
-//     vector<Ctext> batch_ciphertexts(inputChannels);
-//     for(int b=0; b<inputChannels; b++){
-//         batch_ciphertexts[b] = context->EvalBootstrap(encryptedInputs[b], encode_level);
-//     }
-//     return batch_ciphertexts;
-// }
-
 vector<Ctext> FHEONHEController::batch_bootstrap_function(vector<Ctext>& encryptedInputs, int inputChannels, int encode_level) {
+    auto start_bootstrap = startTime();
     vector<Ctext> batch_ciphertexts(inputChannels);
     int numThreads = min(inputChannels, (int)thread::hardware_concurrency());
     vector<thread> threads(numThreads);
@@ -647,37 +707,42 @@ vector<Ctext> FHEONHEController::batch_bootstrap_function(vector<Ctext>& encrypt
     }
     for (auto &th : threads) th.join();
 
+    printBootstrapTiming("  Batch Bootstrapping " + to_string(inputChannels) + " ciphertexts...", start_bootstrap);
     return batch_ciphertexts;
 }
 
 /**
- * @brief Encrypt a vector of input data into a packed ciphertext.
+ * @brief Encrypt a vector of double values into a packed CKKS ciphertext.
  *
- * This function takes a vector of double-precision values and encrypts them 
- * into a single packed ciphertext suitable for homomorphic computations.
- *
- * @param inputData  Vector of data to be encrypted.
- *
- * @return Ciphertext containing the encrypted input data.
+ * @param inputData Data vector to be homomorphically encrypted.
+ * @param isTimeMeasurement If true, initialize timing statistics for the image run.
+ * @return homomorphically encrypted ciphertext.
  */
-Ctext FHEONHEController::encrypt_input(vector<double>& inputData) {
+Ctext FHEONHEController::encrypt_input(vector<double>& inputData, bool isTimeMeasurement) {
+   
     Ptext plaintext = context->MakeCKKSPackedPlaintext(inputData, 1, 1);
     plaintext->SetLength(inputData.size());
     auto encryptImage = context->Encrypt(keyPair.publicKey, plaintext);
+
+     if(isTimeMeasurement) {
+        image_start_time = std::chrono::steady_clock::now();
+        program_start_time = std::chrono::steady_clock::now();
+        image_circuit_time_secs = 0;
+        image_bootstrap_time_ms = 0.0;
+        num_bootsraps = 0;
+        operation_count = 0;
+        accumulated_circuit_time_ms = 0.0;
+    }
     return encryptImage;
 }
 
 
 /**
- * @brief Encode a vector of input data into a packed plaintext.
+ * @brief Encode a double vector into packed CKKS plaintext.
  *
- * This function encodes a vector of double-precision values into a plaintext 
- * suitable for homomorphic encryption, using the specified encoding level.
- *
- * @param inputData     Vector of data to be encoded.
- * @param encode_level  Encoding level to use for the plaintext.
- *
- * @return Plaintext containing the encoded input data.
+ * @param inputData Data vector to encode.
+ * @param encode_level Level budget.
+ * @return Encoded plaintext.
  */
 Ptext FHEONHEController::encode_input(vector<double>& inputData, int encode_level) {
     Ptext plaintext = context->MakeCKKSPackedPlaintext(inputData, 1, encode_level);
@@ -685,17 +750,12 @@ Ptext FHEONHEController::encode_input(vector<double>& inputData, int encode_leve
 }
 
 /**
- * @brief Encode a vector of input data into a packed plaintext with a specified number of slots.
+ * @brief Encode a double vector with explicit slot count.
  *
- * This function encodes a vector of double-precision values into a plaintext 
- * suitable for homomorphic encryption, using the specified number of slots 
- * and encoding level.
- *
- * @param inputData     Vector of data to be encoded.
- * @param num_slots     Number of slots to use in the plaintext.
- * @param encode_level  Encoding level to use for the plaintext.
- *
- * @return Plaintext containing the encoded input data.
+ * @param inputData Data vector to encode.
+ * @param num_slots Number of slots to use.
+ * @param encode_level Level budget.
+ * @return Encoded plaintext.
  */
 
 Ptext FHEONHEController::encode_input(vector<double>& inputData, int num_slots, int encode_level) {
@@ -705,16 +765,11 @@ Ptext FHEONHEController::encode_input(vector<double>& inputData, int num_slots, 
 }
 
 /**
- * @brief Encode a vector for use in a shortcut layer.
+ * @brief Encode kernel weights for ResNet shortcut connections.
  *
- * This function encodes a vector of double-precision values into a plaintext 
- * suitable for the shortcut layer in homomorphic neural network operations, 
- * using the specified column square size.
- *
- * @param inputData    Vector of data to be encoded.
- * @param cols_square  Size of the column square for the encoding.
- *
- * @return Plaintext containing the encoded shortcut kernel data.
+ * @param inputData Flattened weight vector.
+ * @param cols_square Square dimension of output features.
+ * @return Encoded plaintext.
  */
 Ptext FHEONHEController::encode_shortcut_kernel(vector<double>& inputData, int cols_square) {
     int dim1 = inputData.size();
@@ -729,17 +784,12 @@ Ptext FHEONHEController::encode_shortcut_kernel(vector<double>& inputData, int c
 }
 
 /**
- * @brief Encode a vector of bias data into a plaintext.
+ * @brief Encode bias inputs for convolution or linear layers.
  *
- * This function encodes a vector of double-precision bias values into a 
- * plaintext suitable for homomorphic neural network operations, using the 
- * specified column square size and encoding level.
- *
- * @param inputData     Vector of bias data to be encoded.
- * @param cols_square   Size of the column square for the encoding.
- * @param encode_level  Encoding level to use for the plaintext.
- *
- * @return Plaintext containing the encoded bias data.
+ * @param inputData Bias values vector.
+ * @param cols_square Square dimension of output features.
+ * @param encode_level Level budget.
+ * @return Encoded plaintext.
  */
 Ptext FHEONHEController::encode_bais_input(vector<double>& inputData, int cols_square, int encode_level) {
     int dim1 = inputData.size();
@@ -755,14 +805,10 @@ Ptext FHEONHEController::encode_bais_input(vector<double>& inputData, int cols_s
 }
 
 /**
- * @brief Re-encrypt a plaintext vector into a ciphertext.
+ * @brief Re-encrypt plaintext data to ciphertext.
  *
- * This function takes a plaintext containing encoded data and encrypts it 
- * into a ciphertext suitable for homomorphic computations.
- *
- * @param plaintextData  Plaintext data to be re-encrypted.
- *
- * @return Ciphertext containing the encrypted data.
+ * @param plaintextData Plaintext to encrypt.
+ * @return Encrypted ciphertext.
  */
 Ctext FHEONHEController::reencrypt_data(Ptext plaintextData) {
     
@@ -771,15 +817,11 @@ Ctext FHEONHEController::reencrypt_data(Ptext plaintextData) {
 }
 
 /**
- * @brief Decrypt a ciphertext into a plaintext vector.
+ * @brief Decrypt ciphertext into packed plaintext values.
  *
- * This function takes an encrypted ciphertext and decrypts it into a plaintext 
- * vector suitable for further processing or inspection.
- *
- * @param encryptedinputData  Ciphertext to be decrypted.
- * @param cols                Number of elements in the decrypted vector.
- *
- * @return Plaintext containing the decrypted data.
+ * @param encryptedinputData Ciphertext to decrypt.
+ * @param cols Number of slots to retrieve.
+ * @return Decrypted plaintext.
  */
 Ptext FHEONHEController::decrypt_data(Ctext encryptedinputData, int cols) {
     
@@ -790,16 +832,11 @@ Ptext FHEONHEController::decrypt_data(Ctext encryptedinputData, int cols) {
 }
 
 /**
- * @brief Encrypt a 3D kernel matrix into a 2D vector of ciphertexts.
+ * @brief Encrypt a 3D weight kernel matrix.
  *
- * This function takes a 3D vector of double-precision kernel values and encrypts 
- * each 2D slice into a vector of ciphertexts suitable for homomorphic convolution 
- * operations.
- *
- * @param kernelData   3D vector containing kernel values to be encrypted.
- * @param cols_square  Size of the column square for the encryption.
- *
- * @return 2D vector of ciphertexts representing the encrypted kernel.
+ * @param kernelData 3D raw weights vector.
+ * @param cols_square Square dimension of features.
+ * @return Encrypted weights matrix.
  */
 vector<vector<Ctext>> FHEONHEController::encrypt_kernel(vector<vector<vector<double>>>& kernelData, int cols_square){
     size_t dim1 = kernelData.size();
@@ -826,15 +863,11 @@ vector<vector<Ctext>> FHEONHEController::encrypt_kernel(vector<vector<vector<dou
 }
 
 /**
- * @brief Encode kernel data for fully connected layers.
+ * @brief Encode a 1D fully connected weight vector.
  *
- * This function takes a vector of double-precision kernel values and encodes 
- * them into plaintexts suitable for homomorphic operations in fully connected layers.
- *
- * @param kernelData   Vector containing kernel values to be encoded.
- * @param cols_square  Size of the column square for the encoding.
- *
- * @return Vector of plaintexts representing the encoded kernel data.
+ * @param kernelData Weight values vector.
+ * @param cols_square Square dimension.
+ * @return Vector of encoded plaintexts.
  */
 vector<Ptext> FHEONHEController::encode_kernel(vector<double>& kernelData, int cols_square){
     size_t dim1 = kernelData.size();
@@ -851,17 +884,11 @@ vector<Ptext> FHEONHEController::encode_kernel(vector<double>& kernelData, int c
 }
 
 /**
- * @brief Encode and replicate kernel values for homomorphic convolution.
+ * @brief Encode a 3D kernel weight matrix.
  *
- * This function selects values from the kernel positions for all kernels, 
- * repeats them by the square of the width, concatenates them into a single 
- * long vector, and encodes the result. The output is a k^2 vector of repeated 
- * kernel values suitable for homomorphic convolution operations.
- *
- * @param kernelData   Vector containing kernel values to be encoded and replicated.
- * @param cols_square  Size of the column square for encoding.
- *
- * @return Vector of plaintexts representing the encoded and replicated kernel values.
+ * @param kernelData 3D raw weights vector.
+ * @param cols_square Square dimension.
+ * @return Vector of encoded plaintexts.
  */
 vector<Ptext> FHEONHEController::encode_kernel(vector<vector<vector<double>>>& kernelData, int cols_square){
     size_t dim1 = kernelData.size();
@@ -897,15 +924,13 @@ vector<Ptext> FHEONHEController::encode_kernel(vector<vector<vector<double>>>& k
 }
 
 /**
- * @brief Adjust the number of slots in a ciphertext after downsampling.
+ * @brief Dynamically change the number of active slots in a ciphertext.
  *
- * This function modifies the number of slots in the given ciphertext to improve 
- * performance by reducing the size of the polynomial being processed.
+ * Useful for reducing ring dimension/size in pooled layers.
  *
- * @param encryptedInput  Ciphertext whose number of slots will be adjusted.
- * @param num_slots       Desired number of slots in the ciphertext.
- *
- * @return Ciphertext with the updated number of slots.
+ * @param encryptedInput The ciphertext to modify.
+ * @param num_slots The new number of slots.
+ * @return Modifed ciphertext with changed slots.
  */
 
 Ctext FHEONHEController::change_num_slots(Ctext& encryptedInput, uint32_t num_slots){
@@ -914,16 +939,12 @@ Ctext FHEONHEController::change_num_slots(Ctext& encryptedInput, uint32_t num_sl
 }
 
 /**
- * @brief Encode kernel data optimized for 3x3 kernels with padding of 1.
+ * @brief Encode a 3D weight kernel using optimized masking for 3x3 convolution.
  *
- * This function takes 3D kernel data and encodes it into plaintexts, optimized 
- * for kernels of size 3x3 and padding of 1, using the specified encoding level.
- *
- * @param kernelData    3D vector containing kernel values to be encoded.
- * @param cols_square   Size of the column square for encoding.
- * @param encode_level  Encoding level to use for the plaintexts.
- *
- * @return Vector of plaintexts representing the encoded and optimized kernel data.
+ * @param kernelData 3D raw weights vector.
+ * @param cols_square Square dimension.
+ * @param encode_level Level budget.
+ * @return Vector of encoded plaintexts.
  */
 vector<Ptext> FHEONHEController::encode_kernel_optimized(vector<vector<vector<double>>>& kernelData, int cols_square, int encode_level) {
     size_t dim1 = kernelData.size();
@@ -988,42 +1009,52 @@ vector<Ptext> FHEONHEController::encode_kernel_optimized(vector<vector<vector<do
 }
 
 /**
- * @brief Read the predicted label from encrypted inference data.
+ * @brief Decrypt and read the predicted label (argmax) from encrypted output.
  *
- * This function decrypts and reads the predicted label from the given encrypted 
- * inference data. The result can be written to an output file.
+ * Prints prediction info based on verbosity levels. Optionally appends result to predictions file.
  *
- * @param inferencedData  Ciphertext containing the inference results.
- * @param num_slots        Number of elements in the ciphertext.
- * @param outFile          Output file stream to write the predicted label.
- *
- * @return The predicted label as an integer.
+ * @param inferencedData Ciphertext of inference results.
+ * @param num_slots Number of slots to decode.
+ * @param predictions_file_path File path to write the predicted label to.
+ * @return 0 on success.
  */
-int FHEONHEController::read_inferenced_label(Ctext inferencedData, int num_slots,  ofstream& outFile){
+int FHEONHEController::read_inferenced_label(Ctext inferencedData, int num_slots,  const string& predictions_file_path){
     auto decryptedValue = decrypt_data(inferencedData, num_slots);
     auto decryptedVector = decryptedValue->GetRealPackedValue();
     auto maxElementIt = max_element(decryptedVector.begin(), decryptedVector.end());
     int maxIndex = distance(decryptedVector.begin(), maxElementIt);
-    cout << "Predicted Value : " << maxIndex << " Weight:  " << decryptedVector[maxIndex] << endl;
     
-    if (outFile.is_open()) {
-        outFile << maxIndex << endl;
-    } else {
-        cout << "Unable to open file." << endl;
+    if (verbose_level == level_zero) {
+        cout << "Predicted Value : " << maxIndex << endl;
+    } else if (verbose_level == level_one) {
+        cout << "Predicted Value : " << maxIndex << " Weight:  " << decryptedVector[maxIndex] << endl;
+    } else if (verbose_level >= level_two) {
+        cout << "Predicted Value : " << maxIndex << " Weight:  " << decryptedVector[maxIndex] << endl;
+        cout << "Weights for the entire vector: " << decryptedVector << endl;
+    }
+
+    double total_bts_secs = image_bootstrap_time_ms / 1000.0;
+    double image_crt_time_secs = accumulated_circuit_time_ms / 1000.0;
+    image_runtime_secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - image_start_time).count();
+    cout << "Total Bootstrapping Time: " << total_bts_secs << "s" << endl;
+    cout << "Total Circuit Time: " << image_crt_time_secs << "s" << endl;
+    cout << "Total Runtime: " << image_runtime_secs << "s" << endl;
+
+    if (!predictions_file_path.empty()) {
+        ofstream outFile(predictions_file_path, ios_base::app);
+        if (outFile.is_open()) {
+            outFile << maxIndex << endl;
+        }
     }
     return 0;
 }
 
 /**
- * @brief Determine the minimum and maximum values from encrypted data.
+ * @brief Decrypt and print minimum and maximum values of ciphertext slots.
  *
- * This helper function decrypts the inference data and computes the minimum 
- * and maximum values across all elements.
- *
- * @param inferencedData  Ciphertext containing the inference data.
- * @param num_slots       Number of elements in the ciphertext.
- *
- * @return An integer representing the computed min or max value, depending on implementation.
+ * @param inferencedData Ciphertext to analyze.
+ * @param num_slots Number of slots to decrypt.
+ * @return 0 on success.
  */
 int FHEONHEController::read_minmax(Ctext inferencedData, int num_slots) {
     auto decryptedValue = decrypt_data(inferencedData, num_slots);
@@ -1042,15 +1073,11 @@ int FHEONHEController::read_minmax(Ctext inferencedData, int num_slots) {
 }
 
 /**
- * @brief Retrieve the maximum value from encrypted convolution data for ReLU scaling.
+ * @brief Decrypt and read scale value (max absolute ceiling) for ReLU activation.
  *
- * This temporary function decrypts the inference data and returns the maximum 
- * value, which can be used for scaling in the ReLU operation.
- *
- * @param inferencedData  Ciphertext containing the inference data.
- * @param num_slots       Number of elements in the ciphertext.
- *
- * @return Maximum value as an integer.
+ * @param inferencedData Ciphertext to analyze.
+ * @param num_slots Number of slots to decrypt.
+ * @return Max absolute value rounded up.
  */
 int FHEONHEController::read_scaling_value(Ctext inferencedData, int num_slots){
     auto decryptedValue = decrypt_data(inferencedData, num_slots);
@@ -1064,18 +1091,14 @@ int FHEONHEController::read_scaling_value(Ctext inferencedData, int num_slots){
 }
 
 /**
- * @brief Build a tiled mask for optimized convolution operations.
+ * @brief Generate a tiled binary mask for convolution operations.
  *
- * This function generates a mask of 0s and 1s to be element-wise multiplied 
- * with repeated kernel values in optimized convolution operations.
- *
- * @param starting_padding  Number of zeros to pad at the start of the mask.
- * @param ending_padding    Number of zeros to pad at the end of the mask.
- * @param window_length     Length of the convolution window.
- * @param max_length        Maximum length of the mask.
- * @param tile_count        Number of times the pattern should be repeated.
- *
- * @return Vector of doubles representing the tiled mask.
+ * @param starting_padding Zeros at the start.
+ * @param ending_padding Zeros at the end.
+ * @param window_length Length of the convolution window of 1s.
+ * @param max_length Total slots per channel.
+ * @param tile_count Number of channels.
+ * @return Tiled mask data.
  */
 vector<double> FHEONHEController::build_tiled_mask(int starting_padding, int ending_padding, 
     int window_length, int max_length, int tile_count) {
@@ -1118,31 +1141,33 @@ vector<double> FHEONHEController::build_tiled_mask(int starting_padding, int end
 
 
 /**
- * @brief Read the predicted label from encrypted inference data.
+ * @brief Decrypt and read predicted labels for a batch of inferences.
  *
- * This function decrypts and reads the predicted label from the given encrypted 
- * inference data. The result can be written to an output file.
+ * Extracts the argmax class index for each sample in the packed batch.
  *
- * @param inferencedData  Ciphertext containing the inference results.
- * @param num_slots        Number of elements in the ciphertext.
- * @param outFile          Output file stream to write the predicted label.
- *
- * @return The predicted label as an integer.
+ * @param inferencedData Ciphertext containing packed batch results.
+ * @param batchSize Number of samples in the batch.
+ * @param numClasses Number of output classes.
+ * @param predictions_file_path Path to write the predicted labels.
+ * @param baseIndex Index offset for batch tracking.
+ * @return Vector of predicted class labels.
  */
-vector<int> FHEONHEController::read_batch_inferenced_label(Ctext inferencedData,  int batchSize, int numClasses,  ofstream& outFile, int baseIndex){
+vector<int> FHEONHEController::read_batch_inferenced_label(Ctext inferencedData,  int batchSize, int numClasses,  const string& predictions_file_path, int baseIndex){
      int totalElements = batchSize * numClasses;
 
     // Decrypt
     auto decryptedVal = decrypt_data(inferencedData, totalElements);
     auto decryptedVec = decryptedVal->GetRealPackedValue();
-    cout << "DecryptedVec: " << decryptedVec << endl;
+    if (verbose_level >= level_two) {
+        cout << "DecryptedVec: " << decryptedVec << endl;
+    }
 
     vector<int> predictedLabels(batchSize);
 
     // Process each batch separately
     for (int b = 0; b < batchSize; b++) {
         int startIdx = b * numClasses;
-        int endIdx   = startIdx + (numClasses-1);
+        int endIdx   = startIdx + numClasses;
 
         // Find max in this batch slice
         
@@ -1152,30 +1177,53 @@ vector<int> FHEONHEController::read_batch_inferenced_label(Ctext inferencedData,
         );
         int label = distance(decryptedVec.begin() + startIdx, maxIt);
         
-        // cout << "startIdx: " << startIdx
-        //     << "  endIdx: " << endIdx
-        //     << "  Elements: [ ";
-        // for (int i = startIdx; i < endIdx; i++) {
-        //     cout << decryptedVec[i] << " ";
-        // }
-        // cout << "]\n";
-
         predictedLabels[b] = label;
 
-        cout << "Batch " << baseIndex+b 
-             << " -> Predicted Label: " << label 
-             << " (Score: " << *maxIt << ")" << endl;
+        if (verbose_level == level_zero) {
+            cout << "Batch " << baseIndex+b << " -> Predicted Label: " << label << endl;
+        } else if (verbose_level == level_one) {
+            cout << "Batch " << baseIndex+b << " -> Predicted Label: " << label << " (Score: " << *maxIt << ")" << endl;
+        } else if (verbose_level >= level_two) {
+            cout << "Batch " << baseIndex+b << " -> Predicted Label: " << label << " (Score: " << *maxIt << ")" << endl;
+            cout << "Weights for Batch " << baseIndex+b << ": [ ";
+            for (int i = startIdx; i < endIdx; i++) {
+                cout << decryptedVec[i] << " ";
+            }
+            cout << "]" << endl;
+        }
 
-        if (outFile.is_open()) {
-            outFile << label << endl;
+        if (!predictions_file_path.empty()) {
+            ofstream outFile(predictions_file_path, ios_base::app);
+            if (outFile.is_open()) {
+                outFile << label << endl;
+            }
         }
     }
+
+    double total_bts_secs = image_bootstrap_time_ms / 1000.0;
+    double image_crt_time_secs = accumulated_circuit_time_ms / 1000.0;
+    image_runtime_secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - image_start_time).count();
+    cout << "Total Bootstrapping Time: " << total_bts_secs << "s" << endl;
+    cout << "Total Circuit Time: " << image_crt_time_secs << "s" << endl;
+    cout << "Total Runtime: " << image_runtime_secs << "s" << endl;
 
     return predictedLabels;
 }
 
 
-vector<int> FHEONHEController::read_batch_inferenced_label_multiple_outputs(vector<Ctext> inferencedData,  int batchSize, int numClasses,  ofstream& outFile, int baseIndex){
+/**
+ * @brief Decrypt and read predicted labels from multiple independent ciphertexts.
+ *
+ * Each sample is represented by a separate ciphertext.
+ *
+ * @param inferencedData Vector of ciphertexts, one per batch sample.
+ * @param batchSize Number of samples in the batch.
+ * @param numClasses Number of output classes.
+ * @param predictions_file_path Path to write the predicted labels.
+ * @param baseIndex Index offset for batch tracking.
+ * @return Vector of predicted class labels.
+ */
+vector<int> FHEONHEController::read_batch_inferenced_label_multiple_outputs(vector<Ctext> inferencedData,  int batchSize, int numClasses,  const string& predictions_file_path, int baseIndex){
     
     vector<int> predictedLabels(batchSize);
     // Process each batch separately
@@ -1183,7 +1231,7 @@ vector<int> FHEONHEController::read_batch_inferenced_label_multiple_outputs(vect
         auto decryptedVal = decrypt_data(inferencedData[b], numClasses);
         auto decryptedVec = decryptedVal->GetRealPackedValue();
         int startIdx = 0;
-        int endIdx   = startIdx + (numClasses-1);
+        int endIdx   = startIdx + numClasses;
 
         // Find max in this batch slice
         auto maxIt = max_element(
@@ -1193,24 +1241,48 @@ vector<int> FHEONHEController::read_batch_inferenced_label_multiple_outputs(vect
         int label = distance(decryptedVec.begin() + startIdx, maxIt);
         predictedLabels[b] = label;
 
-        cout << "Batch " << baseIndex+b 
-             << " -> Predicted Label: " << label 
-             << " (Score: " << *maxIt << ")" << endl;
+        if (verbose_level == level_zero) {
+            cout << "Batch " << baseIndex+b << " -> Predicted Label: " << label << endl;
+        } else if (verbose_level == level_one) {
+            cout << "Batch " << baseIndex+b << " -> Predicted Label: " << label << " (Score: " << *maxIt << ")" << endl;
+        } else if (verbose_level >= level_two) {
+            cout << "Batch " << baseIndex+b << " -> Predicted Label: " << label << " (Score: " << *maxIt << ")" << endl;
+            cout << "Weights for Batch " << baseIndex+b << ": " << decryptedVec << endl;
+        }
 
-        if (outFile.is_open()) {
-            outFile << label << endl;
+        if (!predictions_file_path.empty()) {
+            ofstream outFile(predictions_file_path, ios_base::app);
+            if (outFile.is_open()) {
+                outFile << label << endl;
+            }
         }
     }
+
+    double total_bts_secs = image_bootstrap_time_ms / 1000.0;
+    double image_crt_time_secs = accumulated_circuit_time_ms / 1000.0;
+    image_runtime_secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - image_start_time).count();
+    cout << "Total Bootstrapping Time: " << total_bts_secs << "s" << endl;
+    cout << "Total Circuit Time: " << image_crt_time_secs << "s" << endl;
+    cout << "Total Runtime: " << image_runtime_secs << "s" << endl;
+
     return predictedLabels;
 }
 
 
+/**
+ * @brief Decrypt and read scaling values for batch ReLU operations.
+ *
+ * @param encryptedInputs Vector of ciphertexts.
+ * @param inputChannels Number of channels.
+ * @param num_slots Number of slots per channel.
+ * @return Vector of scaling factors.
+ */
 vector<int> FHEONHEController::read_batch_scaling_values(vector<Ctext>& encryptedInputs, int inputChannels, int num_slots){
     vector<int> maxVec;
     for(int i=0; i<inputChannels; i++){
         auto decryptedVal = decrypt_data(encryptedInputs[i], num_slots);
         auto decryptedVec = decryptedVal->GetRealPackedValue();
-        double maxAbsVal = *std::max_element(decryptedVec.begin(), decryptedVec.end(), [](int a, int b) {
+        double maxAbsVal = *std::max_element(decryptedVec.begin(), decryptedVec.end(), [](double a, double b) {
             return std::abs(a) < std::abs(b);
         });
         int roundedMax = static_cast<int>(std::ceil(std::abs(maxAbsVal)));
@@ -1219,6 +1291,14 @@ vector<int> FHEONHEController::read_batch_scaling_values(vector<Ctext>& encrypte
     return maxVec;
 }
 
+/**
+ * @brief Decrypt and print min/max values for batch ciphertexts.
+ *
+ * @param encryptedInputs Vector of ciphertexts.
+ * @param inputChannels Number of channels.
+ * @param num_slots Number of slots per channel.
+ * @return 0 on success.
+ */
 int FHEONHEController::read_batch_minmax(vector<Ctext>& encryptedInputs, int inputChannels,  int num_slots) {
     
     vector<int> maxVec;
@@ -1239,17 +1319,12 @@ int FHEONHEController::read_batch_minmax(vector<Ctext>& encryptedInputs, int inp
 }
 
 /**
- * @brief Decrypts and prints a batch of encrypted inputs.
+ * @brief Decrypt and print multiple ciphertexts representing channels or batches.
  *
- * This function iterates through a vector of ciphertexts, decrypts each
- * encrypted input using the internally stored secret key, and prints
- * the real packed values to stdout.
- *
- * @param encryptedInputs Vector of encrypted ciphertext inputs.
- * @param inputChannels Number of encrypted inputs (channels) to decrypt.
- * @param num_slots Number of CKKS slots to decode.
- *
- * @return Returns 0 on successful execution.
+ * @param encryptedInputs Vector of ciphertexts to decrypt.
+ * @param inputChannels Number of ciphertexts/channels.
+ * @param num_slots Number of slots to decode per ciphertext.
+ * @return 0 on success.
  */
 int FHEONHEController::decrypt_batch_data(vector<Ctext>& encryptedInputs, int inputChannels,  int num_slots) {
     
@@ -1257,45 +1332,46 @@ int FHEONHEController::decrypt_batch_data(vector<Ctext>& encryptedInputs, int in
     for(int i=0; i<inputChannels; i++){
         auto decryptedVal = decrypt_data(encryptedInputs[i], num_slots);
         auto decryptedVec = decryptedVal->GetRealPackedValue();
+        // double val = accumulate(decryptedVec.begin(), decryptedVec.end(), 0.0);
         cout << "------------------------------------------------------------------ " << endl;
         cout << decryptedVec << endl;
         cout << "------------------------------------------------------------------ " << endl;
+        // cout << "Accumulated: " << val << endl; 
     }
     return 0;
 }
 
 
 /**
- * @brief Decrypts a packed CKKS ciphertext and prints the result.
+ * @brief Decrypt and print complex packed values of a ciphertext.
  *
- * This function decrypts the provided ciphertext using the controller's
- * secret key, sets the plaintext length to the specified number of slots,
- * extracts the complex CKKS packed values, and prints them.
- *
- * @param encryptedpackedVector Encrypted CKKS ciphertext.
- * @param num_slots Number of slots to extract from the decrypted plaintext.
+ * @param encryptedpackedVector Ciphertext to print.
+ * @param num_slots Number of slots to print.
+ * @return Vector of real decrypted values.
  */
-void FHEONHEController::decrypt_and_print(Ctext encryptedpackedVector, int num_slots) {
+vector<double> FHEONHEController::decrypt_and_print(Ctext encryptedpackedVector, int num_slots) {
     
     Ptext plaintextDec;
     context->Decrypt(keyPair.secretKey, encryptedpackedVector, &plaintextDec);
     plaintextDec->SetLength(num_slots);
     vector<complex<double>> finalResult = plaintextDec->GetCKKSPackedValue();
     cout << finalResult << endl;
+    vector<double> realResult;
+    // add only the number of slots specified by num_slots
+    for (int i = 0; i < num_slots; i++) {
+        realResult.push_back(finalResult[i].real());
+    }
     cout << endl;
+    return realResult;
 }
 
 /**
- * @brief Decrypts ciphertext using a provided private key.
+ * @brief Decrypt ciphertext using an explicit private key.
  *
- * This function decrypts the given ciphertext using the specified secret key,
- * sets the plaintext length, and returns the decrypted plaintext object.
- *
- * @param sk Private key used for decryption.
+ * @param sk Explicit private key for decryption.
  * @param encryptedinputData Ciphertext to decrypt.
- * @param cols Number of plaintext slots to retain.
- *
- * @return Decrypted plaintext (Ptext).
+ * @param cols Number of slots to retrieve.
+ * @return Decrypted plaintext object.
  */
 Ptext FHEONHEController::decrypt_data_with_key(PrivateKey<DCRTPoly> &sk,
                                                Ctext encryptedinputData,
@@ -1308,17 +1384,12 @@ Ptext FHEONHEController::decrypt_data_with_key(PrivateKey<DCRTPoly> &sk,
 }
 
 /**
- * @brief Reads and computes the scaling value from decrypted inference data.
+ * @brief Decrypt and read scaling value using an explicit private key.
  *
- * This function decrypts inference output, retrieves the real packed values,
- * and computes the maximum absolute value across all slots. The result is
- * rounded up to the nearest integer and returned as the scaling factor.
- *
- * @param sk Private key used for decryption.
- * @param inferencedData Encrypted inference output.
- * @param num_slots Number of slots to decode.
- *
- * @return Integer representing the ceiling of the maximum absolute value.
+ * @param sk Explicit private key.
+ * @param inferencedData Ciphertext to analyze.
+ * @param num_slots Number of slots.
+ * @return Max absolute value rounded up.
  */
 int FHEONHEController::read_scaling_value_with_key(PrivateKey<DCRTPoly> &sk,
                                                    Ctext inferencedData,
@@ -1343,37 +1414,56 @@ int FHEONHEController::read_scaling_value_with_key(PrivateKey<DCRTPoly> &sk,
 
 
 /**
- * @brief Decrypts inference output and determines the predicted label.
+ * @brief Decrypt and read prediction index using an explicit private key.
  *
- * This function decrypts the inference ciphertext, extracts the real packed
- * values, determines the index of the maximum value (argmax), and prints the
- * predicted label and its corresponding weight. If the output file stream is
- * open, the predicted label is written to the file.
- *
- * @param sk Private key used for decryption.
- * @param inferencedData Encrypted inference result.
+ * @param sk Explicit private key for decryption.
+ * @param inferencedData Ciphertext of inference results.
  * @param num_slots Number of slots to decode.
- * @param outFile Output file stream to write predicted label.
- *
+ * @param predictions_file_path File path to write the predicted label to.
  * @return Index corresponding to the predicted label.
  */
 int FHEONHEController::read_inferenced_label_with_key(PrivateKey<DCRTPoly> &sk,
                                                       Ctext inferencedData,
                                                       int num_slots,
-                                                      ofstream &outFile) {
+                                                      const string& predictions_file_path) {
     auto decryptedValue = decrypt_data_with_key(sk, inferencedData, num_slots);
     auto decryptedVector = decryptedValue->GetRealPackedValue();
     auto maxElementIt =
         max_element(decryptedVector.begin(), decryptedVector.end());
     int maxIndex = distance(decryptedVector.begin(), maxElementIt);
-    cout << "Predicted Value : " << maxIndex
-        << " Weight:  " << decryptedVector[maxIndex] << endl;
-    cout << "Decrypted Vector: " << decryptedVector << endl;
 
-    if (outFile.is_open()) {
-        outFile << maxIndex << endl;
-    } else {
-        cout << "Unable to open file." << endl;
+    if (verbose_level == level_zero) {
+        cout << "Predicted Value : " << maxIndex << endl;
+    } else if (verbose_level == level_one) {
+        cout << "Predicted Value : " << maxIndex << " Weight:  " << decryptedVector[maxIndex] << endl;
+    } else if (verbose_level >= level_two) {
+        cout << "Predicted Value : " << maxIndex << " Weight:  " << decryptedVector[maxIndex] << endl;
+        cout << "Decrypted Vector: " << decryptedVector << endl;
+    }
+
+    double total_bts_secs = image_bootstrap_time_ms / 1000.0;
+    double total_run_secs = duration_cast<milliseconds>(steady_clock::now() - image_start_time).count() / 1000.0;
+    cout << "Total Bootstrapping Time: " << total_bts_secs << "s" << endl;
+    cout << "Total Circuit Time: " << image_circuit_time_secs << "s" << endl;
+    cout << "Total Runtime: " << total_run_secs << "s" << endl;
+
+    if (!predictions_file_path.empty()) {
+        ofstream outFile(predictions_file_path, ios_base::app);
+        if (outFile.is_open()) {
+            outFile << maxIndex << endl;
+        }
     }
     return maxIndex;
 }
+
+/**
+ * @brief Clear automorphism keys from the given crypto context.
+ *
+ * @param crypto_context Context to clear keys from.
+ */
+void FHEONHEController::harness_clear_bootstrapping_and_rotation_keys(CryptoContext<DCRTPoly> &crypto_context) {
+  // crypto_context->ClearEvalMultKeys();
+  crypto_context->ClearEvalAutomorphismKeys();
+  // CryptoContextFactory<lbcrypto::DCRTPoly>::ReleaseAllContexts();
+}
+

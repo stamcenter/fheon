@@ -30,18 +30,17 @@
 #include "FHEONHEController.h"
 #include "FHEONANNController.h"
 
-using namespace std;
-CryptoContext<DCRTPoly> context;
-FHEONHEController fheonHEController(context);
-
 #ifndef DEFAULT_TEST_SIZE
-#define DEFAULT_TEST_SIZE 10
+#define DEFAULT_TEST_SIZE 250
 #endif
 
 #ifndef INDEX_VALUE
 #define INDEX_VALUE 0
 #endif
 
+using namespace std;
+CryptoContext<DCRTPoly> context;
+FHEONHEController fheonHEController(context);
 Ctext convolution_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int &dataWidth, int &dataSize, int kernelWidth, int padding, 
                                     int striding, int inputChannels, int outputChannels, int reluScale, bool bootstrapState);
 Ctext shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int &dataWidth, int &dataSize, int inputChannels, int outputChannels);
@@ -50,35 +49,35 @@ Ctext resnet_block(FHEONHEController &fheonHEController, FHEONANNController &fhe
 Ctext fc_layer_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int inputChannels, int outputChannels, int rotPosition);
 vector<Ctext> double_shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext &encrytedVector, int &dataWidth, int &dataSize, int inputChannels, int outputChannels);
 
-vector<int> measuringTime;
-auto startIn = get_current_time();
 vector<int> slotsValues = {14, 14, 14, 14};
 
 int main(int argc, char *argv[]) {
-
-    // add a commandline argument --test_size 10
-    int defaultBatchSize = DEFAULT_TEST_SIZE;
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--test_size") == 0) {
-            defaultBatchSize = atoi(argv[i + 1]);
-        }
-    }
+    weights_folder = "./../weights/resnet20/";
+    predictions_file = "./../results/resnet20/fhepredictionsOptimized.txt";
+    auto runtime_config = parse_runtime_args(argc, argv, DEFAULT_TEST_SIZE, INDEX_VALUE);
+    int test_size = runtime_config.test_size;
+    int index_value = runtime_config.index_value;
 
     auto begin_time = startTime();
     printWelcomeMessage();
-    int ringDegree = 15;
-    int numSlots = 14;
-    int circuitDepth = 11;
-    int dcrtBits = 50;
-    int firstMod = 54;
-    int digitSize = 4;
-    vector<uint32_t> levelBudget = {3, 3};
-    int serialize = true;
-    fheonHEController.generate_context(ringDegree, numSlots, circuitDepth, dcrtBits, firstMod, digitSize, levelBudget, serialize);
+    bool loadContext = runtime_config.load_context;
+    FHEONHEController::HEConfig heinitConfig;
+    heinitConfig.ringDim = 15;
+    heinitConfig.numSlots = 14;
+    heinitConfig.mlevelBootstrap = 11;
+    heinitConfig.dcrtBits = 48;
+    heinitConfig.firstMod = 52;
+    heinitConfig.numDigits = 4;
+    heinitConfig.levelBudget = {3, 3};
+    heinitConfig.serialize = true;
+    if (!runtime_config.keys_folder.empty()) {
+        heinitConfig.keysFolder = runtime_config.keys_folder;
+    }
+    fheonHEController.load_context(heinitConfig, loadContext);
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
-    printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------------------------RESNET20-------------"<< to_string(defaultBatchSize) << "--------------------------" << endl; 
+    printDuration(begin_time, loadContext ? "Context Loaded" : "Context Generated and Keys Serialization", false);
+    cout << "---------------------------------RESNET20-------------"<< to_string(test_size) << "--------------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     int img_cols = 32;
@@ -108,11 +107,11 @@ int main(int argc, char *argv[]) {
 
     rkeys_layer1.push_back(conv1_keys);
     rkeys_layer1.push_back(conv2_keys);
-    rkeys_layer1.push_back(conv3_keys);
     
+    rkeys_layer2.push_back(conv3_keys);  // stride-2 transition (layer2_block1 double_shortcut)
     rkeys_layer2.push_back(conv4_keys);
-    rkeys_layer2.push_back(conv5_keys);
 
+    rkeys_layer3.push_back(conv5_keys);  // stride-2 transition (layer3_block1 double_shortcut)
     rkeys_layer3.push_back(conv6_keys);
     fc_layer.push_back(avgpool1_keys);
     fc_layer.push_back(fc_keys);
@@ -146,88 +145,73 @@ int main(int argc, char *argv[]) {
     printDuration(begin_rotkeygenerate_time, "Rotation KeyGen Time", false);
     /********************************************************************************************************************************************/;
 
-    int numImages = defaultBatchSize+INDEX_VALUE;
+    int numImages = test_size + index_value;
     dataWidth = img_cols;
     int dataSize = img_depth*pow(img_cols, 2);
-    string cifar10tPath = "./../images/cifar-10-batches-bin/test_batch.bin";
+    
     vector<vector<double>> imagesData = read_images(cifar10tPath, numImages, dataSize);
-    ofstream outFile;
-    outFile.open("./../results/resnet20/fhepredictionsOptimized.txt", ios_base::app);
+    
+    
     Ctext convData;
     Ptext decryptedData;
     int reluScale = 10;
 
-    for (int imageIndex = INDEX_VALUE; imageIndex < numImages; imageIndex++) {
+    for (int imageIndex = index_value; imageIndex < numImages; imageIndex++) {
         dataWidth = img_cols;
         dataSize = img_depth*pow(dataWidth, 2);
         auto image = imagesData[imageIndex];
         Ctext encryptedImage = fheonHEController.encrypt_input(image);
         cout << endl << imageIndex+1 << " - image Read, Normalized and Encrypted with " << image.size() << " Elements" << endl;
-        
-        /************************************************************************************************ */
-        fheonHEController.clear_context(slotsValues[3]);
-        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[0], "layer1.bin", false);
-        // auto inference_time = startTime();
-        cout<< "Layer 0" << endl;
+        //        /************************************************************************************************ */
+        fheonHEController.read_evaluation_keys(context, "layer1.bin");
+        auto inference_time = startTime();
+
+        printModelLayer("Layer 0");
         convData = convolution_block(fheonHEController, fheonANNController, "layer0_conv1", encryptedImage, dataWidth, dataSize, kernelWidth, padding, striding, img_depth, channelValues[0], reluScale, false);
         dataSize = channelValues[0]*pow(dataWidth, 2);
         reluScale = fheonHEController.read_scaling_value(convData, dataSize);
 
-        startIn = get_current_time();
-        convData = fheonANNController.he_relu(convData, reluScale, dataSize, 59);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
-        // fheonHEController.read_minmax(convData, dataSize);
-		// printDuration(inference_time, "run time", false);
         
-        cout <<  "Layer 1" << endl;
+        convData = fheonANNController.he_relu(convData, reluScale, dataSize, 59);
+        
+        
+        
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block1", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, false, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block2", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer1_block3", convData, dataWidth, dataSize, channelValues[0], channelValues[0], reluScale, true, false);
-        // fheonHEController.read_minmax(convData, dataSize);
-		// printDuration(inference_time, "run time", false);
 
-        cout<< "Layer 2" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block1", convData, dataWidth, dataSize, channelValues[0], channelValues[1], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block2", convData, dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer2_block3", convData, dataWidth, dataSize, channelValues[1], channelValues[1], reluScale, true, false);
-        // fheonHEController.read_minmax(convData, dataSize);
-		// printDuration(inference_time, "run time", false);
 
-        cout<< "Layer 3" << endl;
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block1", convData, dataWidth, dataSize, channelValues[1], channelValues[2], reluScale, true, true);
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block2", convData, dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
         convData = resnet_block(fheonHEController, fheonANNController, "layer3_block3", convData, dataWidth, dataSize, channelValues[2], channelValues[2], reluScale, true, false);
-        // fheonHEController.read_minmax(convData, dataSize);
-		// printDuration(inference_time, "run time", false);
-        // totalTime(measuringTime);
-
-        cout<< "Classification" << endl;
         convData = fheonHEController.bootstrap_function(convData);
-        fheonHEController.clear_context(slotsValues[2]);
-        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[3], "fc_layer.bin", false);
+        fheonHEController.read_evaluation_keys(context, "fc_layer.bin");
         convData->SetSlots(1<<slotsValues[3]);
 
-        startIn = get_current_time();
+        
         convData = fheonANNController.he_globalavgpool(convData, dataWidth,  channelValues[2], avgpoolSize, rotPositions);
         convData = fc_layer_block(fheonHEController, fheonANNController, "layer_fc", convData, channelValues[2], channelValues[3], rotPositions);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
-        totalTime(measuringTime);
-        measuringTime.clear();
+        
+        
+        
 
-        // string infereMessage =  to_string(imageIndex + 1)+"  --  "; 
-        // printDuration(inference_time, infereMessage, false);
+        string infereMessage =  to_string(imageIndex + 1)+"  --  "; 
+        printDuration(inference_time, infereMessage, false);
         decryptedData = fheonHEController.decrypt_data(convData, channelValues[3]);
         printPtextVector(decryptedData);
-        fheonHEController.read_inferenced_label(convData, channelValues[3], outFile);
+        fheonHEController.read_inferenced_label(convData, channelValues[3], predictions_file);
     }
-    outFile.close();
+    
     cout << "All predicted results printed to File." << endl;
     clear_images(imagesData, numImages);
    return 0;
 }
 
 Ctext shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int &dataWidth, int &dataSize, int inputChannels, int outputChannels){
-    string dataPath = "./../weights/resnet20/"+layer;
+    string dataPath = weights_folder+layer;
 
     auto biasVector = load_bias(dataPath+"_bias.csv");
     auto  rawKernelData = load_fc_weights(dataPath+"_weight.csv",  outputChannels, inputChannels);
@@ -242,9 +226,9 @@ Ctext shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNC
     width_sq = pow(width_out, 2);
     auto biasVectorEncoded = fheonHEController.encode_bais_input(biasVector, width_sq);
 
-    startIn = get_current_time();
+    
     auto conv_data = fheonANNController.he_shortcut_convolution(encrytedVector, kernelData, biasVectorEncoded, dataWidth, inputChannels, outputChannels);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
     
     kernelData.clear();
     kernelData.shrink_to_fit();
@@ -254,7 +238,8 @@ Ctext shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNC
 
 Ctext convolution_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int &dataWidth, int &dataSize, int kernelWidth, int padding, 
                                 int striding, int inputChannels, int outputChannels, int reluScale, bool bootstrapState){
-    string dataPath = "./../weights/resnet20/"+layer;
+    if (layer.find("block") == std::string::npos && layer.find("_conv") == std::string::npos) { printModelLayer(layer); }
+    string dataPath = weights_folder+layer;
     auto biasVector = load_bias(dataPath+"_bias.csv");
     auto rawKernelData = load_weights(dataPath+"_weight.csv", outputChannels, inputChannels, kernelWidth, kernelWidth);
     int width_sq = pow(dataWidth, 2);
@@ -269,9 +254,9 @@ Ctext convolution_block(FHEONHEController &fheonHEController, FHEONANNController
     width_sq = pow(width_out, 2);
     auto biasVectorEncoded = fheonHEController.encode_bais_input(biasVector, width_sq, encode_level);
 
-    startIn = get_current_time();
+    
     auto conv_data = fheonANNController.he_convolution_optimized(encrytedVector, kernelData, biasVectorEncoded, dataWidth, inputChannels, outputChannels, striding);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
     
     kernelData.clear();
     kernelData.shrink_to_fit();
@@ -281,7 +266,7 @@ Ctext convolution_block(FHEONHEController &fheonHEController, FHEONANNController
 
 vector<Ctext> double_shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext &encrytedVector, int &dataWidth, int &dataSize, int inputChannels, int outputChannels){
     
-    string dataPath = "./../weights/resnet20/"+layer;
+    string dataPath = weights_folder+layer;
     int width_sq = pow(dataWidth, 2);
     int width_out_sq = pow((dataWidth/2), 2);
     int kernelWidth = 3;
@@ -309,9 +294,9 @@ vector<Ctext> double_shortcut_convolution_block(FHEONHEController &fheonHEContro
     auto biasVectorEncoded = fheonHEController.encode_bais_input(biasVector, width_out_sq);
 	auto shortcutbiasVectorEncoded = fheonHEController.encode_bais_input(shortcutbiasVector, width_out_sq);
     
-    startIn = get_current_time();
+    
     auto returnedCiphers = fheonANNController.he_convolution_and_shortcut_optimized_with_multiple_channels(encrytedVector, kernelData, shortcutkernelData, biasVectorEncoded, shortcutbiasVectorEncoded, dataWidth, inputChannels, outputChannels);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
     
     kernelData.clear();
     kernelData.shrink_to_fit();
@@ -329,6 +314,7 @@ vector<Ctext> double_shortcut_convolution_block(FHEONHEController &fheonHEContro
 
 Ctext resnet_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int &dataWidth, int &dataSize,
                  int inputChannels, int outputChannels, int reluScale, int bootstrapState, bool shortcutConv){
+    printModelLayer(layer);
 
     int kernelWidth = 3; 
     int padding = 1;
@@ -340,16 +326,7 @@ Ctext resnet_block(FHEONHEController &fheonHEController, FHEONANNController &fhe
         string in_layer;
         int slotIndex;
 
-        encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
-        auto doubleResults = double_shortcut_convolution_block(fheonHEController, fheonANNController, layer, encrytedVector, dataWidth, dataSize, inputChannels, outputChannels);
-
-        dataWidth = dataWidth/2;
-        dataSize = (outputChannels*pow(dataWidth, 2));
-      
-        convData = doubleResults[0]->Clone();
-        shortcut_convData =  doubleResults[1]->Clone();
-
-         if(layer == "layer2_block1"){
+        if(layer == "layer2_block1"){
             in_layer = "layer2.bin";
             slotIndex = 1;
         }
@@ -357,14 +334,22 @@ Ctext resnet_block(FHEONHEController &fheonHEController, FHEONANNController &fhe
             in_layer = "layer3.bin";
             slotIndex = 2;
         }
-        fheonHEController.clear_context(slotsValues[slotIndex-1]);
-        fheonHEController.load_bootstrapping_and_rotation_keys(slotsValues[slotIndex], in_layer,  false);
-        context = fheonHEController.getContext();
+
+        // Load the next key set BEFORE running the stride-2 convolution that needs them
+        context = fheonHEController.read_evaluation_keys(context, in_layer);
         fheonANNController.setContext(context);
+
+        encrytedVector = fheonHEController.bootstrap_function(encrytedVector);
+        auto doubleResults = double_shortcut_convolution_block(fheonHEController, fheonANNController, layer, encrytedVector, dataWidth, dataSize, inputChannels, outputChannels);
+
+        dataWidth = dataWidth/2;
+        dataSize = (outputChannels*pow(dataWidth, 2));
+      
+        convData = doubleResults[0]->Clone();
+        shortcut_convData = doubleResults[1]->Clone();
 
         convData->SetSlots(1 << slotsValues[slotIndex]);
         shortcut_convData->SetSlots(1 << slotsValues[slotIndex]);
-        // fheonHEController.read_minmax(convData, dataSize);
     }
     else{
         convData = convolution_block(fheonHEController, fheonANNController, layer+"_conv1", encrytedVector, dataWidth, dataSize, kernelWidth, padding, striding, inputChannels, outputChannels, reluScale, bootstrapState);
@@ -374,24 +359,26 @@ Ctext resnet_block(FHEONHEController &fheonHEController, FHEONANNController &fhe
     }
     reluScale = fheonHEController.read_scaling_value(convData, dataSize);
 
-    startIn = get_current_time();
+    
     convData = fheonANNController.he_relu(convData, reluScale, dataSize, polyDeg);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
 
-    convData = convolution_block(fheonHEController, fheonANNController, layer+"_conv2", convData, dataWidth, dataSize, kernelWidth, padding, striding, outputChannels, outputChannels, reluScale, bootstrapState);
-    Ctext sum_convData = fheonANNController.he_sum_two_ciphertexts(convData, shortcut_convData);
+    auto second_convData = convolution_block(fheonHEController, fheonANNController, layer+"_conv2", convData, dataWidth, dataSize, kernelWidth, padding, striding, outputChannels, outputChannels, reluScale, bootstrapState);
+
+    Ctext sum_convData = fheonANNController.he_sum_two_ciphertexts(second_convData, shortcut_convData);
     sum_convData = fheonHEController.bootstrap_function(sum_convData);
 
     reluScale = fheonHEController.read_scaling_value(sum_convData, dataSize);
-    startIn = get_current_time();
+    
     sum_convData = fheonANNController.he_relu(sum_convData, reluScale, dataSize, polyDeg);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
+
     return sum_convData->Clone();
 }
 
-
 Ctext fc_layer_block(FHEONHEController &fheonHEController, FHEONANNController &fheonANNController, string layer, Ctext encrytedVector, int inputChannels, int outputChannels, int rotPosition){
-    string dataPath = "./../weights/resnet20/"+layer;
+    printModelLayer(layer);
+    string dataPath = weights_folder+layer;
     auto fc_biasVector = load_bias(dataPath+"_bias.csv");
     auto fc_rawKernelData = load_fc_weights(dataPath+"_weight.csv", outputChannels, inputChannels);
     vector<Ptext> fc_kernelData;
@@ -401,9 +388,9 @@ Ctext fc_layer_block(FHEONHEController &fheonHEController, FHEONANNController &f
     }
 	Ptext encodedbaisVector = context->MakeCKKSPackedPlaintext(fc_biasVector, 1,  encrytedVector->GetLevel());
 
-    startIn = get_current_time();
+    
     Ctext layer_data = fheonANNController.he_linear_optimized(encrytedVector, fc_kernelData, encodedbaisVector, inputChannels, outputChannels);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
     fc_kernelData.clear();
     fc_kernelData.shrink_to_fit();
     fc_biasVector.clear();

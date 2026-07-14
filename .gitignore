@@ -1,9 +1,17 @@
+
+# Python cache + compiled files
+__pycache__/
+*.py[cod]
+*/__pycache__/
+python/__pycache__/*
+python/*/__pycache__/*
+
 build/*
 sskeys
 packages/*
 images/*
 HEkeys/*
 AllHEkeys/*
+AllHEKeys/*
 myenv/*
 
-*/__pycache__/

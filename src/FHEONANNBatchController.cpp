@@ -125,6 +125,30 @@ vector<int> FHEONANNBatchController::generate_convolution_batch_rotation_positio
     keys_position.push_back(-1);
     keys_position.push_back(1);
 
+
+
+    int shift = inputWidth - width_out;
+    keys_position.push_back(shift);
+
+    shift = (inputWidth_sq - width_out_sq);
+    keys_position.push_back(shift);
+
+    for(int i=1; i < kernelWidth; i++){
+        keys_position.push_back(i);
+        keys_position.push_back(-i);
+    }
+
+    // for(int i=1; i<width_out; i++){
+    //     shift = (i*width_out);
+    //     keys_position.push_back(-shift);
+    // }
+
+    // for(int b=0; b<batchSize; b++){
+    //     shift = (b*width_out_sq);
+    //     keys_position.push_back(-shift);
+    // }
+
+
     if(stride > 1){
         for (int s=1; s<log2(width_out); s++) {
             keys_position.push_back( pow(2, s-1));
@@ -147,11 +171,8 @@ vector<int> FHEONANNBatchController::generate_convolution_batch_rotation_positio
     }
 
     std::sort(keys_position.begin(), keys_position.end());
-    auto new_end = std::remove(keys_position.begin(), keys_position.end(), 0);
-    new_end = std::unique(keys_position.begin(), keys_position.end());
-    unique(keys_position.begin(), keys_position.end());
-    keys_position.erase(new_end, keys_position.end());
-    std::sort(keys_position.begin(), keys_position.end());
+    keys_position.erase(std::unique(keys_position.begin(), keys_position.end()), keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
     return keys_position;
 }
 
@@ -217,11 +238,8 @@ vector<int> FHEONANNBatchController::generate_avgpool_batch_optimized_rotation_p
     keys_position.push_back(shift);
     
     std::sort(keys_position.begin(), keys_position.end());
-    auto new_end = std::remove(keys_position.begin(), keys_position.end(), 0);
-    new_end = std::unique(keys_position.begin(), keys_position.end());
-    unique(keys_position.begin(), keys_position.end());
-    keys_position.erase(new_end, keys_position.end());
-    std::sort(keys_position.begin(), keys_position.end());
+    keys_position.erase(std::unique(keys_position.begin(), keys_position.end()), keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
 
     return keys_position;
 }
@@ -273,11 +291,8 @@ vector<int> FHEONANNBatchController::generate_linear_batch_rotation_positions(in
     }
    
     std::sort(keys_position.begin(), keys_position.end());
-    auto new_end = std::remove(keys_position.begin(), keys_position.end(), 0);
-    new_end = std::unique(keys_position.begin(), keys_position.end());
-    unique(keys_position.begin(), keys_position.end());
-    keys_position.erase(new_end, keys_position.end());
-    std::sort(keys_position.begin(), keys_position.end());
+    keys_position.erase(std::unique(keys_position.begin(), keys_position.end()), keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
     return keys_position;
 }
 
@@ -295,33 +310,147 @@ vector<int> FHEONANNBatchController::generate_linear_batch_rotation_positions(in
  *
  * @return vector<int>   Vector of rotation positions required for input conversion.
  */
-vector<int> FHEONANNBatchController::generate_batch_inputs_converter_rotation_positions(int batchSize, int inputChannels, int inputSize) {
+vector<int> FHEONANNBatchController::generate_batch_inputs_converter_rotation_positions(int batchSize, int inputChannels, int inputWidth, int baseIndex) {
     
     vector<int> keys_position;
-    int batchKey = inputChannels * pow(inputSize, 2);
-    keys_position.push_back(inputSize);
-    keys_position.push_back(inputSize*inputSize);
+    int pixelsPerChannel = inputWidth * inputWidth;
+    int batchNeuronCount = inputChannels * pixelsPerChannel;
 
-    for(int b=1; b<batchSize; b++){
-        int rot_idx = (b * batchKey); 
-        int base_idx = (rot_idx / baseIndex) * baseIndex;
-        int mod_idx = rot_idx % baseIndex; 
-        keys_position.push_back(-base_idx);
-        keys_position.push_back(-mod_idx);
-    }
-
-    for(int i=1; i<=inputChannels; i++){
-        keys_position.push_back(-i);
-        keys_position.push_back(i);
+    for (int b = 0; b < batchSize; b++) {
+        for (int i = 0; i < inputChannels; i++) {
+            int currentPos = b * pixelsPerChannel;
+            int targetPos = b * batchNeuronCount + i * pixelsPerChannel;
+            int shift = currentPos - targetPos;
+            
+            if (shift != 0) {
+                // Handle rotation splitting based on baseIndex
+                int base_idx = (abs(shift) / baseIndex) * baseIndex;
+                int mod_idx = abs(shift) % baseIndex;
+                int sign = (shift > 0) ? 1 : -1;
+                
+                if (base_idx != 0) keys_position.push_back(sign * base_idx);
+                if (mod_idx != 0) keys_position.push_back(sign * mod_idx);
+            }
+        }
     }
     
     std::sort(keys_position.begin(), keys_position.end());
-    auto new_end = std::remove(keys_position.begin(), keys_position.end(), 0);
-    new_end = std::unique(keys_position.begin(), keys_position.end());
-    unique(keys_position.begin(), keys_position.end());
-    keys_position.erase(new_end, keys_position.end());
-    std::sort(keys_position.begin(), keys_position.end());
+    keys_position.erase(std::unique(keys_position.begin(), keys_position.end()), keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
     return keys_position;
+}
+
+
+vector<int> FHEONANNBatchController::generate_normalization_rotation_positions(int inputSize) {
+    vector<int> keys_position;
+    keys_position.push_back(-1);
+
+   for(int j=1; j<log2(inputSize); j++){
+        int powVal = pow(2, j);
+        keys_position.push_back(-powVal);
+    }
+    std::sort(keys_position.begin(), keys_position.end());
+    keys_position.erase(std::unique(keys_position.begin(), keys_position.end()), keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
+    return keys_position;
+}
+
+
+
+vector<int> FHEONANNBatchController::generate_backpass_convolution_rotation_positions(int inputSize, int kernelWidth) {
+    vector<int> keys_position;
+    int kernelSize = kernelWidth * kernelWidth;
+
+   for(int j=1; j<kernelSize; j++){
+        keys_position.push_back(j);
+    }
+    std::sort(keys_position.begin(), keys_position.end());
+    keys_position.erase(std::unique(keys_position.begin(), keys_position.end()), keys_position.end());
+    keys_position.erase(std::remove(keys_position.begin(), keys_position.end(), 0), keys_position.end());
+    return keys_position;
+}
+
+
+
+vector<Ctext> FHEONANNBatchController::he_batch_convolution(FHEONHEController &fheonHEController, vector<Ctext>& encryptedInputs, vector<vector<vector<vector<vector<double>>>>>& rawKernelData, vector<vector<double>>& rawBiasData,
+                            int batchSize, int inputWidth, int inputChannels, int outputChannels, int kernelWidth, int padding, int stride){
+
+    
+    auto start_time = startTime();
+int kernelSize = kernelWidth * kernelWidth;
+    inputWidth += 2 * padding;
+    int inputSize = inputWidth*inputWidth;
+    int outputWidth = ((inputWidth - kernelWidth) / stride) + 1;
+    int outputSize = outputWidth * outputWidth;
+    int inVecSize = batchSize*inputSize;
+    int outVecSize = batchSize * outputSize; 
+    int encode_level = encryptedInputs[0]->GetLevel();
+
+    Ptext cleaningoutputMask = context->MakeCKKSPackedPlaintext(generate_mixed_mask(outVecSize,  inVecSize), 1,  encode_level);
+    Ctext encryptedzeros =  context->EvalMult(encryptedInputs[0], gen_zero_mask(inVecSize, encode_level));
+
+    // STEP 2 - ROTATE INPUT TO FORM k^2 slices
+    vector<vector<Ctext>> bactched_rotated_ciphertexts(inputChannels);
+    for(int b=0; b<inputChannels; b++){
+        vector<Ctext> rotated_ciphertexts;
+        for (int k=0; k<kernelWidth; k++) {
+            if(k >0){
+                encryptedInputs[b] = context->EvalRotate(encryptedInputs[b], inputWidth);
+            }
+            rotated_ciphertexts.push_back(encryptedInputs[b]);
+            for (int kw = 1; kw < kernelWidth; kw++) {
+                rotated_ciphertexts.push_back(context->EvalRotate(encryptedInputs[b], kw));
+            }
+        }
+        bactched_rotated_ciphertexts[b] = rotated_ciphertexts;
+    }
+
+    vector<Ctext> output_ciphertexts(outputChannels); 
+    for(int outCh=0; outCh<outputChannels; outCh++){
+        
+        /** STEP 1: multiply rotated inputs with kernel data */
+        vector<Ctext> input_channel_results(inputChannels);
+        for(int inCh=0; inCh<inputChannels; inCh++){
+            vector<Ctext> mult_results(kernelSize);
+            auto encodeKernel = fheonHEController.encode_kernel(rawKernelData[outCh][inCh], inputSize);
+            for (int k = 0; k < kernelSize; k++) {
+                mult_results[k] = context->EvalMult(bactched_rotated_ciphertexts[inCh][k], encodeKernel[k]);
+            }
+            input_channel_results[inCh] = context->EvalAddMany(mult_results);
+            mult_results.clear();
+        }
+
+        /** STEP 2: sum all results to create convolution results for every input */
+        Ctext result = context->EvalAddMany(input_channel_results);
+        input_channel_results.clear();
+
+        // Step 3: Cleaning the resulting ciphertext by removing unwanted row elements
+        Ctext cleanedrows =  encryptedzeros->Clone();
+        for (int row = 0; row < outputWidth; row++) {
+            Ctext masked = context->EvalMult(result, gen_row_mask_with_channels(row, outputWidth, inputSize, batchSize, result->GetLevel()));
+            cleanedrows = context->EvalAdd(cleanedrows, masked);
+            if(row < outputWidth-1){
+                result = context->EvalRotate(result, (inputWidth - outputWidth));
+            }
+        }
+
+        /** step 4: process per channel ******/ 
+        Ctext cleanedchannels =  encryptedzeros->Clone();
+        for (int ch=0; ch < batchSize; ch++){
+            Ctext masked = context->EvalMult(cleanedrows, gen_channel_mask_with_zeros(ch, outputSize, batchSize, result->GetLevel()));
+            cleanedchannels = context->EvalAdd(cleanedchannels, masked);
+            if(ch < batchSize-1){
+                cleanedrows = context->EvalRotate(cleanedrows, (inputSize - outputSize));
+            }
+        }
+
+        /** Step 5: Clean out all irrelevant data from ciphertext with new dimensions */
+        auto inbiasEncoded = context->MakeCKKSPackedPlaintext(rawBiasData[outCh], 1, result->GetLevel(), nullptr, nextPowerOf2(outVecSize));
+        output_ciphertexts[outCh] = context->EvalAdd(context->EvalMult(cleanedchannels, cleaningoutputMask), inbiasEncoded); 
+
+    }
+    printTiming("Batch convolution evaluated...", "Conv", start_time);
+    return output_ciphertexts;
 }
 
 /**
@@ -366,7 +495,9 @@ vector<Ctext> FHEONANNBatchController::he_batch_convolution_optimized(
                 int batchSize, int inputWidth, int inputChannels,
                 int outputChannels, int stride) {
 
-    constexpr int kernelSq = 9;
+    
+    auto start_time = startTime();
+constexpr int kernelSq = 9;
     int outputWidth = inputWidth / stride;
     int inputSize = inputWidth * inputWidth;
     int outputSize = outputWidth * outputWidth;
@@ -453,6 +584,7 @@ vector<Ctext> FHEONANNBatchController::he_batch_convolution_optimized(
     for (auto &thout : outThreads) thout.join();
 
     batched_rotated_ciphertexts.clear();
+    printTiming("Optimized batch convolution evaluated...", "Conv", start_time);
     return output_ciphertexts;
 }
 
@@ -494,12 +626,13 @@ vector<Ctext> FHEONANNBatchController::he_batch_convolution_optimized(
  * - Multi-channel striding is used to reduce the number of rotations and multiplications,
  *   making it efficient for FHE-based CNNs with multiple input channels.
  */
-vector<Ctext> FHEONANNBatchController::he_batch_convolution_shortcut_optimized(
-                            FHEONHEController &fheonHEController, vector<Ctext>& encryptedInputs, 
+vector<Ctext> FHEONANNBatchController::he_batch_convolution_shortcut_optimized(FHEONHEController &fheonHEController, vector<Ctext>& encryptedInputs, 
                             vector<vector<vector<double>>>& rawKernelData, vector<vector<double>>& rawBiasData,
                             int batchSize, int inputWidth, int inputChannels, int outputChannels, int stride){
     
-    int outputWidth = inputWidth / stride;
+    
+    auto start_time = startTime();
+int outputWidth = inputWidth / stride;
     int inputSize = inputWidth * inputWidth;
     int outputSize = outputWidth * outputWidth;
     // int encodeLevel = encryptedInputs[0]->GetLevel();
@@ -540,6 +673,7 @@ vector<Ctext> FHEONANNBatchController::he_batch_convolution_shortcut_optimized(
 
     for (auto &th : threads) th.join();
 
+    printTiming("Optimized batch convolution and shortcut evaluated...", "Conv", start_time);
     return output_ciphertexts;
 }
 
@@ -569,7 +703,9 @@ vector<Ctext> FHEONANNBatchController::he_batch_sum_ciphertexts(
     int inputChannels
 ) {
 
-    vector<Ctext> summed_ciphertexts(inputChannels);
+    
+    auto start_time = startTime();
+vector<Ctext> summed_ciphertexts(inputChannels);
 
     int hwThreads = thread::hardware_concurrency();
     int numThreads = min(inputChannels, hwThreads > 0 ? hwThreads : 4);
@@ -592,7 +728,108 @@ vector<Ctext> FHEONANNBatchController::he_batch_sum_ciphertexts(
     }
     for (auto &th : threads) th.join();
 
+    printTiming("Batch addition evaluated...", "Add", start_time);
     return summed_ciphertexts;
+}
+
+
+
+
+/**
+ * @brief Perform optimized secure average pooling on batched encrypted feature maps.
+ *
+ * This function computes average pooling across multiple input channels 
+ * for batched data under homomorphic encryption. For each channel, it 
+ * partitions the input feature map into local regions of size 
+ * (kernelWidth × kernelWidth), sums the values in each region, 
+ * and applies scaling to obtain the average. The stride length determines 
+ * how pooling regions are traversed across the feature map. 
+ *
+ * The operation is applied independently to each input channel. Within each 
+ * channel, ciphertext rotations and additions are used efficiently to align 
+ * and sum pooling regions across batches, minimizing the number of 
+ * homomorphic operations. The output is one ciphertext per channel, where 
+ * each ciphertext encodes the pooled results for all batches.
+ *
+ * @param encryptedInputs   Vector of ciphertexts, one per input channel, 
+ *                          each encoding batched feature maps of size 
+ *                          (batchSize × inputWidth × inputWidth).
+ * @param batchSize         Number of batches encoded in the ciphertexts.
+ * @param inputWidth        Width (and height) of the input feature maps (assumed square).
+ * @param inputChannels     Number of input channels to pool.
+ * @param kernelWidth       Width (and height) of the pooling kernel (assumed square).
+ * @param stridingLen       Stride length used to slide the pooling window 
+ *                          across the input feature maps.
+ *
+ * @return vector<Ctext>    Vector of ciphertexts where each element corresponds 
+ *                          to one pooled channel across all batches. Each output 
+ *                          ciphertext encodes multiple pooled values per batch, 
+ *                          arranged as:
+ *                          [batch0 pooled values][batch1 pooled values]...
+ *
+ * @note 
+ * - This implementation is optimized for FHE-based CNN/ANN architectures where 
+ *   reducing the number of ciphertext rotations and multiplications is critical 
+ *   for efficiency. 
+ * - The function assumes ciphertext packing follows contiguous layout: 
+ *   [batch0: channel_i feature map][batch1: channel_i feature map]...
+ */
+vector<Ctext> FHEONANNBatchController::he_optimzed_batch_avgPool(vector<Ctext>& encryptedInputs,  int batchSize, int inputWidth, int inputChannels, int kernelWidth, int stridingLen){
+    
+    
+    auto start_time = startTime();
+int kernelSize = pow(kernelWidth, 2);
+    int inputSize = pow(inputWidth, 2);
+    int outputWidth = inputWidth / stridingLen;
+    int outputSize = outputWidth * outputWidth;
+    int inVecSize = batchSize * inputSize;
+    int outVecSize = batchSize * outputSize; 
+
+    int encode_level = encryptedInputs[0]->GetLevel();
+    Ptext reducingMask =  context->MakeCKKSPackedPlaintext(generate_scale_mask(kernelSize, inVecSize), 1, encode_level);
+    Ptext cleaningInMask = context->MakeCKKSPackedPlaintext(generate_mixed_mask(inputSize, inVecSize), 1, encode_level);
+    vector<double> cleaningoutputVec = generate_mixed_mask(outVecSize, inVecSize);
+
+    /*** STEP 1 - ROTATE THE CIPHERTEXT into by k^2-1 and create a k^2 rotated right positions ***/
+    vector<Ctext> batched_ciphertexts(inputChannels);
+    for(int i=0; i<inputChannels; i++){
+        vector<Ctext> rotated_ciphertexts;
+        Ctext encryptedInput = encryptedInputs[i];
+        auto digits = context->EvalFastRotationPrecompute(encryptedInput);
+        rotated_ciphertexts.push_back(encryptedInput);
+        rotated_ciphertexts.push_back(context->EvalFastRotation(encryptedInput, 1, context->GetCyclotomicOrder(), digits));
+        rotated_ciphertexts.push_back(context->EvalFastRotation(encryptedInput, inputWidth, context->GetCyclotomicOrder(), digits));
+        rotated_ciphertexts.push_back(context->EvalRotate(context->EvalFastRotation(encryptedInput, inputWidth, context->GetCyclotomicOrder(), digits), 1));
+        Ctext sum_cipher = context->EvalAddMany(rotated_ciphertexts);
+
+        /*** STEP 3: Multiply the scale value with the sum cipher */
+        batched_ciphertexts[i] = context->EvalMult(sum_cipher, reducingMask);
+    }
+    
+    /**** Caryout the average pooling if we have less than 4 elements per channel elements*/
+    vector<Ctext> pooled_ciphertexts(inputChannels);
+    if(inputWidth <= 2){
+        for(int i=0; i<inputChannels; i++){
+            Ctext inn_ciphertext = batched_ciphertexts[i];
+            vector<Ctext> inn_ciphers;
+            for(int i = 0; i<batchSize; i++){
+
+                inn_ciphers.push_back(context->EvalSum(context->EvalMult(inn_ciphertext, cleaningInMask), inputSize));
+                inn_ciphertext = context->EvalRotate(inn_ciphertext, inputSize);
+            }
+            
+            pooled_ciphertexts[i] = context->EvalMerge(inn_ciphers);
+        }
+        cout << "input width is less than 2" << endl;
+    }
+    else{
+        for(int i=0; i<inputChannels; i++){
+            Ctext result = FHEONANNController::downsample_with_multiple_channels(batched_ciphertexts[i], inputWidth, stridingLen, batchSize);
+            pooled_ciphertexts[i] = context->EvalMult(result, context->MakeCKKSPackedPlaintext(cleaningoutputVec, 1, result->GetLevel()));
+        }
+    }
+    printTiming("Optimized batch average pooling evaluated...", "AvgPool", start_time);
+    return pooled_ciphertexts;
 }
 
 
@@ -624,6 +861,8 @@ vector<Ctext> FHEONANNBatchController::he_batch_sum_ciphertexts(
 vector<Ctext> FHEONANNBatchController::he_batch_globalpool(vector<Ctext>& encryptedInputs, int batchSize, int inputWidth, 
                         int inputChannels, int kernelWidth, int rotatePositions){
     
+    
+    auto start_time = startTime();
     int inputSize = inputWidth*inputWidth;
     // auto reducingMask =  context->MakeCKKSPackedPlaintext(generate_scale_mask(inputSize, batchSize), 1, encryptedInputs[0]->GetLevel());
     vector<double> reducingMask = generate_scale_mask(inputSize, batchSize);
@@ -681,66 +920,10 @@ vector<Ctext> FHEONANNBatchController::he_batch_globalpool(vector<Ctext>& encryp
     }
 
     for (auto &th : threads) th.join();
+    printTiming("Batch global average pooling evaluated...", "AvgPool", start_time);
     return pooled_ciphertexts; 
 }
 
-
-//  Ctext FHEONANNBatchController::he_batch_linear(
-//     Ctext& encryptedInput, vector<Ptext>& weightMatrix,
-//     Ptext& baisInput, int batchSize, int inputSize,
-//     int outputSize, int rotatePositions){
-    
-//     int totalSize = batchSize*inputSize;
-//     vector<Ctext> result_matrix;
-//     vector<vector<Ctext>> batched_ciphertexts(batchSize);
-//     vector<double> cleaningInVec = generate_mixed_mask(inputSize, totalSize);
-    
-//     int j = 0;
-//     int rotation_index = 0;
-//     for(int i=0; i<outputSize; i++){
-//         // For each batch element, rotate base and sum -> push into that batch's vector
-//         Ctext temp = context->EvalMult(encryptedInput, weightMatrix[i]);
-//         for (int b = 0; b < batchSize; b++) {
-//             if (b != 0) {
-//                 temp = context->EvalRotate(temp, inputSize);
-//             }
-//             Ctext summed = context->EvalSum(temp, inputSize);
-//             // Ctext summed = context->EvalSum(context->EvalMult(temp, context->MakeCKKSPackedPlaintext(cleaningInVec, 1, temp->GetLevel())), inputSize);
-//             batched_ciphertexts[b].push_back(summed);
-//         }
-//         // cout << "outputSize: " << i << " -- Rotate: " << inputSize << endl;
-
-//         if ((j == rotatePositions - 1) || (i == outputSize - 1)) {
-//             for (int b = 0; b < batchSize; b++) {
-//                 // cout << "batched_ciphertexts[" << b << "] size: " << batched_ciphertexts[b].size() << " --batch Rotate: " << -(b * outputSize) << " --rotation_index "<< rotation_index << endl;
-//                 Ctext inn_ciphertext = context->EvalMerge(batched_ciphertexts[b]);
-//                 // cout << "After Merge" << endl; 
-//                 // Apply rotations to place merged block into the correct global slot
-//                 if (b != 0) {
-//                     // cout << "b " << b << ": " << (b * outputSize) << endl;
-//                     inn_ciphertext = context->EvalRotate(inn_ciphertext, -(b * outputSize));
-//                 }
-//                 if (rotation_index != 0) {
-//                     inn_ciphertext = context->EvalRotate(inn_ciphertext, -rotation_index);
-//                 }
-//                 result_matrix.push_back(inn_ciphertext);
-//                 batched_ciphertexts[b].clear();
-//             }
-//             if(j == rotatePositions - 1){
-//                 rotation_index += rotatePositions;
-//             }
-//             j = 0;
-//         } else {
-//             j++;
-//         }
-//     } 
-//     // Combine results and add bias
-//     Ctext with_bias = context->EvalAdd(context->EvalAddMany(result_matrix), baisInput);
-//     result_matrix.clear();
-//     batched_ciphertexts.clear();
-
-//     return with_bias;
-// }
 
 /**
  * @brief Perform a homomorphic batched linear (fully connected) layer.
@@ -772,8 +955,7 @@ vector<Ctext> FHEONANNBatchController::he_batch_globalpool(vector<Ctext>& encryp
  *         for all batches and output neurons.
  */
 
-Ctext FHEONANNBatchController::he_batch_linear(
-    Ctext& encryptedInput, vector<Ptext>& weightMatrix,
+Ctext FHEONANNBatchController::he_batch_linear(Ctext& encryptedInput, vector<Ptext>& weightMatrix,
     Ptext& baisInput, int batchSize, int inputSize,
     int outputSize, int rotationIndex){
     
@@ -876,10 +1058,10 @@ Ctext FHEONANNBatchController::he_batch_linear(
  *         element.
  */
 
-vector<Ctext> FHEONANNBatchController::he_batch_linear_multiple_outputs(
-    Ctext& encryptedInput, vector<Ptext>& weightMatrix,
+vector<Ctext> FHEONANNBatchController::he_batch_linear_multiple_outputs(Ctext& encryptedInput, vector<Ptext>& weightMatrix,
     Ptext& baisInput, int batchSize, int inputSize, int outputSize){
     
+    auto start_time = startTime();
     vector<vector<Ctext>> batched_ciphertexts(batchSize, vector<Ctext>(outputSize));
 
     int hwThreads = thread::hardware_concurrency();
@@ -929,79 +1111,9 @@ vector<Ctext> FHEONANNBatchController::he_batch_linear_multiple_outputs(
 
     // Combine results and add bias
     batched_ciphertexts.clear();
+    printTiming("Batch linear with multiple outputs evaluated...", "FC", start_time);
     return result_matrix;
 }
-
-
-
-// vector<Ctext> FHEONANNBatchController::he_batch_linear_multiple_outputs(
-    
-//     Ctext& encryptedInput, vector<Ptext>& weightMatrix,
-//     Ptext& baisInput, int batchSize, 
-//     int inputSize, int outputSize){
-    
-//     vector<Ctext> result_matrix(batchSize);
-
-//     int hwThreads = thread::hardware_concurrency();
-//     int numThreads = min(outputSize, hwThreads > 0 ? hwThreads : 4);
-
-//     // Process batches in smaller chunks to reduce memory usage
-//     int chunkSize = 128; // Process 128 batches at a time
-//     for (int chunkStart = 0; chunkStart < batchSize; chunkStart += chunkSize) {
-//         int chunkEnd = std::min(chunkStart + chunkSize, batchSize);
-//         int currentChunkSize = chunkEnd - chunkStart;
-
-//         vector<vector<Ctext>> batched_ciphertexts(currentChunkSize, vector<Ctext>(outputSize));
-//         auto worker = [&](int start, int end) {
-//             for (int i = start; i < end; i++) {
-//                 int idxW = chunkStart +i;
-//                 Ctext temp = context->EvalMult(encryptedInput, weightMatrix[idxW]);
-//                 if( chunkStart != 0 ){
-//                     // Rotate to the start of the current chunk
-//                     temp = context->EvalRotate(temp, chunkStart * inputSize);
-//                 }
-//                 for (int b = 0; b < currentChunkSize; b++) {
-//                     if (b != 0) {
-//                         temp = context->EvalRotate(temp, inputSize);
-//                     }
-//                     batched_ciphertexts[b][i] = context->EvalSum(temp, inputSize);
-//                 }
-//             }
-//         };
-
-//         vector<thread> threads(numThreads);
-//         int block = (outputSize + numThreads - 1) / numThreads;
-//         for (int t = 0; t < numThreads; t++) {
-//             int start = t * block;
-//             int end = std::min(start + block, outputSize);
-//             threads[t] = std::thread(worker, start, end);
-//         }
-//         for (auto &th : threads) th.join();
-
-//         cout << "Inputs rows for chunk [" << chunkStart << ", " << chunkEnd << ") all calculated" << endl;
-
-//         auto batchworker = [&](int bstart, int bend) {
-//             for (int b = bstart; b < bend; b++) {
-//                 int indexInResult = chunkStart + b;
-//                 result_matrix[indexInResult] =  context->EvalAdd(context->EvalMerge(batched_ciphertexts[b]), baisInput);
-//             }
-//         };
-
-//         int numBatchThreads = min(currentChunkSize, hwThreads > 0 ? hwThreads : 4);
-//         vector<thread> bthreads(numBatchThreads);
-//         int bblock = (currentChunkSize + numBatchThreads - 1) / numBatchThreads;
-//         for (int t = 0; t < numBatchThreads; t++) {
-//             int bstart = t * bblock + chunkStart;
-//             int bend = std::min(bstart + bblock, chunkEnd);
-//             bthreads[t] = std::thread(batchworker, bstart, bend);
-//         }
-//         for (auto &th : bthreads) th.join();
-
-//         batched_ciphertexts.clear(); // Clear memory for this chunk
-//     }
-
-//     return result_matrix;
-// }
 
 
 
@@ -1032,10 +1144,11 @@ vector<Ctext> FHEONANNBatchController::he_batch_linear_multiple_outputs(
  */
 
 vector<Ctext> FHEONANNBatchController::he_batch_relu(vector<Ctext>& encryptedInputs, vector<int> scaleValues,  int inputChannels, int vectorSize, int polyDegree) {
+    
+    auto start_time = startTime();
     double lowerBound = -1;
     double upperBound = 1;
     
-    auto encryptInn = encryptedInputs;
     // int scaleVal = 110;
     vector<Ctext> relu_results(inputChannels);
     int totalElements =  nextPowerOf2(vectorSize);
@@ -1046,19 +1159,15 @@ vector<Ctext> FHEONANNBatchController::he_batch_relu(vector<Ctext>& encryptedInp
     auto worker = [&](int start, int end) {
         for(int i=start; i<end; i++){
             int scaleVal = scaleValues[i];
-            if(scaleVal <= 1){
-                encryptInn[i] = encryptedInputs[i];
-                scaleVal = 1;
-            }
-            else{
+            if(scaleVal >= 1){
                 scaleVal = 2*scaleVal;
                 // auto mask_data = context->MakeCKKSPackedPlaintext(generate_scale_mask(scaleVal, vectorSize), 1, 1, nullptr, totalElements);
                 auto mask_data = context->MakeCKKSPackedPlaintext(generate_scale_mask(scaleVal, vectorSize), 1, encryptedInputs[i]->GetLevel(), nullptr, totalElements);
-                encryptInn[i] = context->EvalMult(encryptedInputs[i], mask_data);
+                encryptedInputs[i] = context->EvalMult(encryptedInputs[i], mask_data);
             }
             relu_results[i] = context->EvalChebyshevFunction(
-                            [scaleVal](double x) -> double { if (x < 0) return 0; else return scaleVal*x; }, 
-                                                encryptInn[i],
+                            [scaleVal](double x) -> double { if (x < 0) return 0; else return (scaleVal) * x; }, 
+                                                encryptedInputs[i],
                                                 lowerBound,
                                                 upperBound, 
                                                 polyDegree);
@@ -1074,7 +1183,8 @@ vector<Ctext> FHEONANNBatchController::he_batch_relu(vector<Ctext>& encryptedInp
     }
 
     for (auto &th : threads) th.join();
-
+    
+    printTiming("Batch ReLU evaluated...", "ReLU", start_time);
     return relu_results;
 }
 
@@ -1104,39 +1214,51 @@ vector<Ctext> FHEONANNBatchController::he_batch_relu(vector<Ctext>& encryptedInp
  * - This ensures compatibility between convolutional outputs (channel-based) 
  *   and fully connected layers (neuron-based).
  */
-Ctext FHEONANNBatchController::he_batch_inputs_converter(vector<Ctext>& encryptedInputs, int batchSize, int inputChannels, int inputWidth) {
+Ctext FHEONANNBatchController::he_batch_inputs_converter(vector<Ctext>& encryptedInputs, int batchSize, int inputChannels, int inputWidth, int baseIndex) {
     
-    int inputSize = pow(inputWidth, 2); 
-    int batchKey = (inputChannels * inputSize);
-    // int inVecSize = batchSize * inputSize; // total packed vector size
-    // auto cleaningMask = context->MakeCKKSPackedPlaintext(generate_mixed_mask(inputSize, inVecSize), 1, encryptedInputs[0]->GetLevel());
-    vector<Ctext> batch_ciphertexts(batchSize);
+    // auto start_time = startTime();
+    int pixelsPerChannel = inputWidth * inputWidth; 
+    int batchNeuronCount = inputChannels * pixelsPerChannel;
+    int level = encryptedInputs[0]->GetLevel();
+    int rotIndex = 1;
+    vector<Ctext> allProjections;
+
     for (int b = 0; b < batchSize; b++) {
+        // Create mask for batch b
+        vector<double> mask(batchSize * pixelsPerChannel, 0.0);
+        for (int p = 0; p < pixelsPerChannel; p++) {
+            mask[b * pixelsPerChannel + p] = 1.0;
+        }
+        Ptext pMask = context->MakeCKKSPackedPlaintext(mask, 1, level);
+
         for (int i = 0; i < inputChannels; i++) {
-            if(b != 0){
-                encryptedInputs[i] = context->EvalRotate(encryptedInputs[i], inputSize);
+            Ctext isolated = context->EvalMult(encryptedInputs[i], pMask);
+            
+            int currentPos = b * pixelsPerChannel;
+            int targetPos = b * batchNeuronCount + i * pixelsPerChannel;
+            int shift = currentPos - targetPos;
+
+            if (shift != 0) {
+                int base_idx = (abs(shift) / baseIndex) * baseIndex;
+                int mod_idx = abs(shift) % baseIndex;
+                int sign = (shift > 0) ? 1 : -1;
+                
+                if (base_idx != 0){
+                    rotIndex = sign * base_idx; 
+                    isolated = context->EvalRotate(isolated, rotIndex);
+                }
+                if (mod_idx != 0){
+                    rotIndex = sign * mod_idx;
+                    isolated = context->EvalRotate(isolated, rotIndex);
+                }
             }
+            allProjections.push_back(isolated);
         }
-        
-        // Combine all channels for this batch into one ciphertext
-        Ctext combinedChannels = context->EvalMerge(encryptedInputs);
-        if (b != 0) {
-            int rot_idx = (b * batchKey);
-            int base_idx = (rot_idx / baseIndex) * baseIndex;
-            int mod_idx = rot_idx % baseIndex; 
-            if(base_idx != 0){
-                combinedChannels = context->EvalRotate(combinedChannels, -base_idx);
-            }
-            if(mod_idx !=0){
-                combinedChannels = context->EvalRotate(combinedChannels, -mod_idx);
-            }
-        }
-        batch_ciphertexts[b] = combinedChannels;
     }
 
-    // Combine all batch ciphertexts into the final output
-    Ctext finalCipher = context->EvalAddMany(batch_ciphertexts);
-    batch_ciphertexts.clear();
+    Ctext finalCipher = context->EvalAddMany(allProjections);
+    allProjections.clear();
+    // printTiming("Batch inputs converter evaluated...", "Conv", start_time);
     return finalCipher;
 }
 
@@ -1207,5 +1329,148 @@ Ptext FHEONANNBatchController::gen_channel_mask_with_zeros(int channel, int outp
         mask[pos + i] = 1.0;
     }
     return context->MakeCKKSPackedPlaintext(mask, 1.0, level);
+}
+
+Ctext FHEONANNBatchController::he_batch_inputs_converter_memory_efficient(vector<Ctext>& encryptedInputs, int batchSize, int inputChannels, int inputWidth, int baseIndex) {
+    auto start_time = startTime();
+    int pixelsPerChannel = inputWidth * inputWidth; 
+    int batchNeuronCount = inputChannels * pixelsPerChannel;
+    int level = encryptedInputs[0]->GetLevel();
+
+    // Precompute plaintext masks for each batch
+    vector<Ptext> pMasks(batchSize);
+    for (int b = 0; b < batchSize; b++) {
+        vector<double> mask(batchSize * pixelsPerChannel, 0.0);
+        for (int p = 0; p < pixelsPerChannel; p++) {
+            mask[b * pixelsPerChannel + p] = 1.0;
+        }
+        pMasks[b] = context->MakeCKKSPackedPlaintext(mask, 1, level);
+    }
+
+    int hwThreads = thread::hardware_concurrency();
+    int numThreads = min(inputChannels, hwThreads > 0 ? hwThreads : 4);
+    vector<Ctext> thread_results(numThreads, nullptr);
+
+    auto worker = [&](int t, int start, int end) {
+        vector<Ctext> local_tree;
+        for (int b = 0; b < batchSize; b++) {
+            for (int i = start; i < end; i++) {
+                Ctext isolated = context->EvalMult(encryptedInputs[i], pMasks[b]);
+                
+                int currentPos = b * pixelsPerChannel;
+                int targetPos = b * batchNeuronCount + i * pixelsPerChannel;
+                int shift = currentPos - targetPos;
+
+                if (shift != 0) {
+                    int base_idx = (abs(shift) / baseIndex) * baseIndex;
+                    int mod_idx = abs(shift) % baseIndex;
+                    int sign = (shift > 0) ? 1 : -1;
+                    
+                    if (base_idx != 0){
+                        int rotVal = sign * base_idx; 
+                        isolated = context->EvalRotate(isolated, rotVal);
+                    }
+                    if (mod_idx != 0){
+                        int rotVal = sign * mod_idx;
+                        isolated = context->EvalRotate(isolated, rotVal);
+                    }
+                }
+                
+                // Merge isolated into local_tree
+                Ctext current = isolated;
+                size_t tree_level = 0;
+                while (tree_level < local_tree.size() && local_tree[tree_level] != nullptr) {
+                    current = context->EvalAdd(current, local_tree[tree_level]);
+                    local_tree[tree_level] = nullptr;
+                    tree_level++;
+                }
+                if (tree_level == local_tree.size()) {
+                    local_tree.push_back(current);
+                } else {
+                    local_tree[tree_level] = current;
+                }
+            }
+        }
+
+        // Reduce local_tree to a single ciphertext
+        Ctext localSum = nullptr;
+        for (auto& cl : local_tree) {
+            if (cl != nullptr) {
+                if (localSum == nullptr) {
+                    localSum = cl;
+                } else {
+                    localSum = context->EvalAdd(localSum, cl);
+                }
+            }
+        }
+        thread_results[t] = localSum;
+    };
+
+    vector<thread> threads(numThreads);
+    int block = (inputChannels + numThreads - 1) / numThreads;
+    for (int t = 0; t < numThreads; t++) {
+        int start = t * block;
+        int end = std::min(start + block, inputChannels);
+        threads[t] = std::thread(worker, t, start, end);
+    }
+    for (auto &th : threads) th.join();
+
+    Ctext finalCipher = nullptr;
+    for (auto& cl : thread_results) {
+        if (cl != nullptr) {
+            if (finalCipher == nullptr) {
+                finalCipher = cl;
+            } else {
+                finalCipher = context->EvalAdd(finalCipher, cl);
+            }
+        }
+    }
+
+    printTiming("Batch inputs converter memory efficient evaluated...", "Conv", start_time);
+    return finalCipher;
+}
+
+Ctext FHEONANNBatchController::he_batch_linear_memory_efficient(
+    Ctext& encryptedInput, vector<Ptext>& weightMatrix,
+    Ptext& baisInput, int batchSize, int inputSize,
+    int outputSize, int rotationIndex){
+    
+    auto start_time = startTime();
+    vector<Ctext> result_matrix(batchSize);
+    
+    vector<Ctext> current_rotated_temp(outputSize);
+    for(int i = 0; i < outputSize; i++){
+        current_rotated_temp[i] = context->EvalMult(encryptedInput, weightMatrix[i]);
+    }
+
+    for (int b = 0; b < batchSize; b++) {
+        vector<Ctext> batch_i_ciphers(outputSize);
+        for(int i = 0; i < outputSize; i++){
+            if (b != 0) {
+                current_rotated_temp[i] = context->EvalRotate(current_rotated_temp[i], inputSize);
+            }
+            batch_i_ciphers[i] = context->EvalSum(current_rotated_temp[i], inputSize);
+        }
+        
+        Ctext inn_ciphertext = context->EvalMerge(batch_i_ciphers);
+        if (b != 0){ 
+            int rot_idx = (b * outputSize); 
+            int base_idx = (rot_idx / rotationIndex) * rotationIndex;
+            int mod_idx = rot_idx % rotationIndex; 
+            if(base_idx > 0){
+                inn_ciphertext = context->EvalRotate(inn_ciphertext, -base_idx);
+            }
+            if(mod_idx > 0){
+                inn_ciphertext = context->EvalRotate(inn_ciphertext, -mod_idx);
+            }
+        }
+        result_matrix[b] = inn_ciphertext;
+    }
+
+    // Combine results and add bias
+    Ctext fc_results = context->EvalAdd(context->EvalAddMany(result_matrix), baisInput);
+    result_matrix.clear();
+    printTiming("Batch linear memory efficient evaluated...", "FC", start_time);
+    return fc_results;
 }
 

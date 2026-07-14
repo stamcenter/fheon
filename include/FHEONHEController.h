@@ -60,23 +60,54 @@ class FHEONHEController {
 
 protected:
     CryptoContext<DCRTPoly> context;
+    bool context_loaded = false;
 
 public:
+
+    /** Create a config */
+    struct HEConfig {
+        int ringDim;
+        int numSlots;
+        int mlevelBootstrap;
+        int dcrtBits;
+        int firstMod;
+        int numDigits;
+        vector<uint32_t> levelBudget;
+        bool serialize;
+        // string keysFolder = "/scratch/nnjungle/AllHEkeys/32threads/";
+        string keysFolder = "../AllHEKeys/";
+    };
 
     int circuit_depth;
     int num_slots;
     int pLWE;
     int mult_depth = 10;
-    // string keys_folder = "/scratch/nnjungle/HEkeys/";
-    string keys_folder = "../AllHEkeys/";
+    int num_bootsraps = 0;
+    // string keys_folder = "/scratch/nnjungle/AllHEkeys/32threads/";
+    string keys_folder = "../AllHEKeys/";
     string rotation_prefix = "rotation_keys_"; 
     string mult_prefix = "./mult_keys_";
     string sum_prefix = "./sum_keys_";
-    
-    FHEONHEController(CryptoContext<DCRTPoly> ctx) : context(ctx) {}
+    string mult_file = "./mult-keys.bin";
+    string sum_file = "./sum-keys.bin";
+    string multi_key_file;
+    string sum_key_file;
+    string crypto_context_file;
+    string public_key_file;
+    string secret_key_file;
+
+    void update_key_paths();
+
+    FHEONHEController(CryptoContext<DCRTPoly> ctx) : context(ctx), context_loaded(false) {
+        update_key_paths();
+    }
     
     CryptoContext<DCRTPoly> getContext() const {
         return context;
+    }
+
+    PublicKey<DCRTPoly> getPublicKey() const {
+        return keyPair.publicKey;
     }
 
     /*
@@ -85,22 +116,32 @@ public:
     void generate_context(int ringDim=15, int numSlots=14, int mlevelBootstrap=10, int dcrtBits=55, int firstMod=56,   
                         int numDigits=3, vector<uint32_t> levelBudget ={4, 4}, bool serialize=true);
 
-    void generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize, bool sumkey = false);
-    void generate_rotation_keys(vector<int> rotations, string filename = "", bool serialize = true);
-    void generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename, bool serialize, bool sumkey = false);
+    void generate_context(HEConfig config);
+
+
+    void generate_bootstrapping_keys(int bootstrap_slots, string filename, bool serialize);
+    void generate_rotation_keys(vector<int> rotations, string filename = "", bool serialize = true, bool sum_key=true);
+    void generate_bootstrapping_and_rotation_keys(vector<int> rotations, int bootstrap_slots, const string& filename, bool serialize, bool sum_key = false);
     
-    void load_context(bool verbose = false);
+    void load_context();
+    void load_context(HEConfig config, bool loadContext = true);
+
     void load_rotation_keys(const string& filename, bool verbose=false);
     void load_bootstrapping_and_rotation_keys(int bootstrap_slots, const string& filename,  bool verbose=false);
+
+    void harness_clear_bootstrapping_and_rotation_keys(CryptoContext<DCRTPoly> &crypto_context);
+    CryptoContext<DCRTPoly> read_evaluation_keys(CryptoContext<DCRTPoly> crypto_context, const string &rot_file);
 
     void clear_rotation_keys();
     void clear_context(int bootstrapping_key_slots);
     void clear_bootstrapping_and_rotation_keys(int bootstrap_num_slots);
+    
+    void set_bootstrap_count(int count);
     Ctext bootstrap_function(Ctext& encryptedInput, int level = 2);
     vector<Ctext> batch_bootstrap_function(vector<Ctext>& encryptedInput, int inputChannels, int encode_level=2);
     
     /*** Encrypt and decrypt packed ciphertext. used to encrypt image and decrpt the results ****/
-    Ctext encrypt_input(vector<double>& inputData);
+    Ctext encrypt_input(vector<double>& inputData, bool isTimeMeasurement = true);
     Ctext reencrypt_data(Ptext plaintextInput);
     Ptext encode_input(vector<double>& inputData, int encode_level = 1);
     Ptext encode_input(vector<double>& inputData, int num_slots, int encode_level);
@@ -115,15 +156,15 @@ public:
 
     Ctext change_num_slots(Ctext& encryptedInput, uint32_t numSlots);
 
-    int read_inferenced_label(Ctext encryptedInput, int noElements,  ofstream& outFile);
+    int read_inferenced_label(Ctext encryptedInput, int noElements,  const string& predictions_file_path = "");
     int read_minmax(Ctext encryptedInput, int noElements); 
     int read_scaling_value(Ctext encryptedInput, int noElements);
-    vector<int> read_batch_inferenced_label(Ctext inferencedData, int batchSize, int numClasses,  ofstream& outFile, int baseIndex = 0);
-    vector<int> read_batch_inferenced_label_multiple_outputs(vector<Ctext> inferencedData,  int batchSize, int numClasses,  ofstream& outFile, int baseIndex = 0);
+    vector<int> read_batch_inferenced_label(Ctext inferencedData, int batchSize, int numClasses,  const string& predictions_file_path = "", int baseIndex = 0);
+    vector<int> read_batch_inferenced_label_multiple_outputs(vector<Ctext> inferencedData,  int batchSize, int numClasses,  const string& predictions_file_path = "", int baseIndex = 0);
     vector<int> read_batch_scaling_values(vector<Ctext>& encryptedInputs, int inputChannels, int num_slots);
     int read_batch_minmax(vector<Ctext>& encryptedInputs, int inputChannels,  int num_slots);
     int decrypt_batch_data(vector<Ctext>& encryptedInputs, int inputChannels,  int num_slots);
-    void decrypt_and_print(Ctext encryptedpackedVector, int num_slots);
+    vector<double> decrypt_and_print(Ctext encryptedpackedVector, int num_slots);
 
 
     Ptext decrypt_data_with_key(PrivateKey<DCRTPoly> &sk,
@@ -132,11 +173,11 @@ public:
                                     Ctext encryptedInput, int noElements);
     int read_inferenced_label_with_key(PrivateKey<DCRTPoly> &sk,
                                      Ctext encryptedInput, int noElements,
-                                     ofstream &outFile);
+                                     const string& predictions_file_path = "");
 
 private:
     KeyPair<DCRTPoly> keyPair;
-    vector<uint32_t> level_budget = {4, 4};
+    vector<uint32_t> level_budget = {3, 3};
     vector<uint32_t> bsgsDim = {0, 0};
     vector<double> build_tiled_mask(int starting_padding, int ending_padding, int window_length, int max_length, int tile_count) ;
     

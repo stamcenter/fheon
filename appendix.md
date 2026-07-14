@@ -13,7 +13,7 @@ FHEON is a configurable framework for building **privacy-preserving convolutiona
 The framework enables neural network inference to be executed entirely over encrypted data, ensuring that sensitive inputs remain protected throughout computation. 
 By combining configurable neural network components with secure encrypted execution, FHEON supports privacy-preserving machine learning deployments for sensitive and security-critical applications.
 
-This appendix documents FHEON in the **SINGLE_INPUT** mode of the framework. The single-input pipeline performs encrypted inference on one sample at a time and is suitable for low-latency per-sample deployments, benchmarking, and controlled research comparisons.
+This appendix documents FHEON in the **SINGLE_INPUTS** mode of the framework. The single-input pipeline performs encrypted inference on one sample at a time and is suitable for low-latency per-sample deployments, benchmarking, and controlled research comparisons.
 
 Models covered in this appendix:
 - `LeNet5` with MNIST.
@@ -22,7 +22,7 @@ Models covered in this appendix:
 - `VGG16` with CIFAR-10.
 - `ResNet34` with CIFAR-100.
 
-The C++ executables are generated from `CMakeLists.txt` when building with `-DMODE=SINGLE_INPUT` or `-DMODE=ALL -DSINGLE_MODEL=...`.
+The C++ executables are generated from `CMakeLists.txt` when building with `-DMODE=SINGLE_INPUTS` or `-DMODE=ALL -DSINGLE_MODEL=...`.
 
 ## Security / Privacy Notes
 
@@ -75,7 +75,7 @@ make
 sudo make install
 ```
 
-## Build: SINGLE_INPUT
+## Build: SINGLE_INPUTS
 
 From the repository root:
 
@@ -84,14 +84,14 @@ git clone https://github.com/stamcenter/fheon.git
 cd fheon
 mkdir -p build
 cd build
-cmake -DMODE=SINGLE_INPUT -DSINGLE_MODEL=ALL ..
+cmake -DMODE=SINGLE_INPUTS -DSINGLE_MODEL=ALL ..
 make -j$(nproc)
 ```
 
 To build one specific model, for example `ResNet20`:
 
 ```bash
-cmake -DMODE=SINGLE_INPUT -DSINGLE_MODEL=ResNet20 ..
+cmake -DMODE=SINGLE_INPUTS -DSINGLE_MODEL=ResNet20 ..
 make -j$(nproc)
 ```
 
@@ -124,7 +124,7 @@ These results are summarized in Table 5. The default number of images run for ea
 1. **At Build Time (CMake):**
    Configure the default test size when running CMake:
    ```bash
-   cmake -DMODE=SINGLE_INPUT -DTEST_SIZE=20 ..
+   cmake -DMODE=SINGLE_INPUTS -DTEST_SIZE=20 ..
    make -j$(nproc)
    ```
 

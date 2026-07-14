@@ -30,43 +30,42 @@
 #include "FHEONHEController.h"
 #include "FHEONANNController.h"
 
-using namespace std;
-
-CryptoContext<DCRTPoly> context;
-FHEONHEController fheonHEController(context);
+#ifndef DEFAULT_TEST_SIZE
+#define DEFAULT_TEST_SIZE 250
+#endif
 
 #ifndef INDEX_VALUE
 #define INDEX_VALUE 0
 #endif
 
-#ifndef DEFAULT_TEST_SIZE
-#define DEFAULT_TEST_SIZE 10
-#endif
+using namespace std;
 
-vector<int> measuringTime;
-auto startIn = get_current_time();
+CryptoContext<DCRTPoly> context;
+FHEONHEController fheonHEController(context);
 
 int main(int argc, char *argv[]) {
-
-
-    int defaultBatchSize = DEFAULT_TEST_SIZE;
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--test_size") == 0) {
-            defaultBatchSize = atoi(argv[i + 1]);
-        }
-    }
+    weights_folder = "./../weights/lenet5/";
+    predictions_file = "./../results/lenet5/fhepredictions.txt";
+    auto runtime_config = parse_runtime_args(argc, argv, DEFAULT_TEST_SIZE, INDEX_VALUE);
+    int test_size = runtime_config.test_size;
+    int index_value = runtime_config.index_value;
 
     auto begin_time = startTime();
     printWelcomeMessage();
-    int ringDegree = 13;
-    int numSlots = 12;
-    int circuitDepth = 11;
-    int dcrtBits = 42;
-    int firstMod = 46;
-    int digitSize = 4;
-    vector<uint32_t> levelBudget = {3, 3};
-    int serialize = true;
-    fheonHEController.generate_context(ringDegree, numSlots, circuitDepth, dcrtBits, firstMod, digitSize, levelBudget, serialize);
+    bool loadContext = runtime_config.load_context;
+    FHEONHEController::HEConfig heinitConfig;
+    heinitConfig.ringDim = 13;
+    heinitConfig.numSlots = 12;
+    heinitConfig.mlevelBootstrap = 11;
+    heinitConfig.dcrtBits = 46;
+    heinitConfig.firstMod = 50;
+    heinitConfig.numDigits = 4;
+    heinitConfig.levelBudget = {3, 3};
+    heinitConfig.serialize = true;
+    if (!runtime_config.keys_folder.empty()) {
+        heinitConfig.keysFolder = runtime_config.keys_folder;
+    }
+    fheonHEController.load_context(heinitConfig, loadContext);
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     printDuration(begin_time, "Context Generated and Keys Serialization", false);
@@ -99,16 +98,15 @@ int main(int argc, char *argv[]) {
     /*** Generate the rotation positions, generate rotation keys, and load rotation keys */
     auto begin_rotkeygenerate_time = startTime();
     cout << "This is the rotation positions (" << rotation_positions.size() <<"): " << rotation_positions << endl;
-    fheonHEController.generate_rotation_keys(rotation_positions, "rotation_keys.bin", true);
+    fheonHEController.generate_rotation_keys(rotation_positions, "rotation_keys.bin", true, true);
     printDuration(begin_rotkeygenerate_time, "Rotation KeyGen (position, gen, and load) Time", false);
-
     /*************************************************** Prepare Weights for the network **************************************************/
     /*** 1st Convolution */
     auto wloading_time = startTime();
-    string dataPath = "./../weights/lenet5/";
+    string dataPath = weights_folder;
 
-    auto conv1_biasVector = load_bias(dataPath+"Conv1_bias.csv");
-    auto conv1_rawKernelData = load_weights(dataPath+"Conv1_weight.csv", channels[1], channels[0], kernelWidth, kernelWidth);
+    auto conv1_biasVector = load_bias(dataPath+"conv1_bias.csv");
+    auto conv1_rawKernelData = load_weights(dataPath+"conv1_weight.csv", channels[1], channels[0], kernelWidth, kernelWidth);
     int conv1WidthSq = pow(imgWidth[0], 2);
     vector<vector<Ptext>> conv1_kernelData;
     for(int i=0; i<channels[1]; i++){
@@ -117,8 +115,8 @@ int main(int argc, char *argv[]) {
     }
     auto conv1biasEncoded = fheonHEController.encode_bais_input(conv1_biasVector, (imgWidth[1] * imgWidth[1]));
     
-    auto conv2_rawKernelData = load_weights(dataPath+"Conv2_weight.csv", channels[2], channels[1], kernelWidth, kernelWidth);
-    auto conv2_biasVector = load_bias(dataPath+"Conv2_bias.csv");
+    auto conv2_rawKernelData = load_weights(dataPath+"conv2_weight.csv", channels[2], channels[1], kernelWidth, kernelWidth);
+    auto conv2_biasVector = load_bias(dataPath+"conv2_bias.csv");
     int conv2WidthSq = pow(imgWidth[2], 2);
     vector<vector<Ptext>> conv2_kernelData;
     for(int i=0; i<channels[2]; i++){
@@ -128,8 +126,8 @@ int main(int argc, char *argv[]) {
     auto conv2biasEncoded = fheonHEController.encode_bais_input(conv2_biasVector, (imgWidth[3]* imgWidth[3]));
 
      /*** first fully layer connected kernel and bias */
-    auto fc1_biasVector = load_bias(dataPath+"FC1_bias.csv");
-    auto fc1_rawKernelData = load_fc_weights(dataPath+"FC1_weight.csv", channels[4], channels[3]);
+    auto fc1_biasVector = load_bias(dataPath+"fc1_bias.csv");
+    auto fc1_rawKernelData = load_fc_weights(dataPath+"fc1_weight.csv", channels[4], channels[3]);
     vector<Ptext> fc1_kernelData;
     for(int i=0; i < channels[4]; i++){
         auto encodeWeights = fheonHEController.encode_input(fc1_rawKernelData[i]);
@@ -138,8 +136,8 @@ int main(int argc, char *argv[]) {
     Ptext fc1baisVector = context->MakeCKKSPackedPlaintext(fc1_biasVector, 1);
     
      /*** second fully layer connected weights and bias */
-    auto fc2_biasVector = load_bias(dataPath+"FC2_bias.csv");
-    auto fc2_rawKernelData = load_fc_weights(dataPath+"FC2_weight.csv", channels[5], channels[4]);
+    auto fc2_biasVector = load_bias(dataPath+"fc2_bias.csv");
+    auto fc2_rawKernelData = load_fc_weights(dataPath+"fc2_weight.csv", channels[5], channels[4]);
     vector<Ptext> fc2_kernelData;
     for(int i=0; i<channels[5]; i++){
         auto encodeWeights = fheonHEController.encode_input(fc2_rawKernelData[i]);
@@ -148,8 +146,8 @@ int main(int argc, char *argv[]) {
     Ptext fc2baisVector = context->MakeCKKSPackedPlaintext(fc2_biasVector, 1);
 
      /*** third fully layer connected weights and bias */
-    auto fc3_biasVector = load_bias(dataPath+"FC3_bias.csv");
-    auto fc3_rawKernelData = load_fc_weights(dataPath+"FC3_weight.csv", channels[6], channels[5]);
+    auto fc3_biasVector = load_bias(dataPath+"fc3_bias.csv");
+    auto fc3_rawKernelData = load_fc_weights(dataPath+"fc3_weight.csv", channels[6], channels[5]);
     vector<Ptext> fc3_kernelData;
     for(int i=0; i<channels[6]; i++){
         auto encodeWeights = fheonHEController.encode_input(fc3_rawKernelData[i]);
@@ -161,10 +159,10 @@ int main(int argc, char *argv[]) {
 
     /************************************************************************************************ */
      /**** Read the MNIST Images and inference them */
-    string mnistPath = "./../images/mnist_images/raw/t10k-images-idx3-ubyte";
+    
     int numImages = 1;
     int imageSize = channels[0]*(imgWidth[0]* imgWidth[0]);
-    int numtoShow = defaultBatchSize+INDEX_VALUE;
+    int numtoShow = test_size+index_value;
     int reluScale = 10;
     vector<int> dataSizeVector;
     dataSizeVector.push_back((channels[1]*pow(imgWidth[1], 2)));
@@ -173,10 +171,10 @@ int main(int argc, char *argv[]) {
     /*** Read MNIST images ***/
     unsigned char** mnistData = read_mnist_images(mnistPath, numImages, imageSize);
     vector<double> readImage;
-    std::ofstream outFile;
-    outFile.open("./../results/lenet5/fhepredictions.txt", std::ios_base::app);
+    
+    
 
-    for (int imageIndex = INDEX_VALUE; imageIndex < numtoShow; imageIndex++) {
+    for (int imageIndex = index_value; imageIndex < numtoShow; imageIndex++) {
         unsigned char* image = mnistData[imageIndex];
         readImage = read_single_mnist_image(image, imageSize);
         // display_mnist_image(image, imageSize, true);
@@ -186,62 +184,69 @@ int main(int argc, char *argv[]) {
         /***** The first Convolution Layer takes  image=(1,28,28), kernel=(6,1,5,5) 
          * stride=1, pooling=0 output= (6,24,24) = 3456 vals */
         reluScale = 10;
-        // auto inference_time = startTime();
-        startIn = get_current_time();
+        auto inference_time = startTime();
+        
+        printModelLayer("Layer", 1);
         auto convData = fheonANNController.he_convolution(encryptedImage, conv1_kernelData, conv1biasEncoded, imgWidth[0], channels[0], channels[1], kernelWidth);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
+        
         reluScale = fheonHEController.read_scaling_value(convData, dataSizeVector[0]);
-        // cout << "Relu Scale for Conv1: " << reluScale << endl;
 
-        startIn = get_current_time();
+        
         convData = fheonANNController.he_relu(convData, reluScale, dataSizeVector[0]);
         convData = fheonANNController.he_avgpool_optimzed(convData, imgWidth[1], channels[1], poolSize, poolSize);
         
         /*** Second Conv2d Layer input = (6,12,12), kernel=(16,6,5,5) 
          * striding =1, padding = 0 output = (16,8,8) ***/
+        printModelLayer("Layer", 2);
         convData = fheonANNController.he_convolution(convData, conv2_kernelData, conv2biasEncoded, imgWidth[2],channels[1], channels[2], kernelWidth);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
+        
 
-        reluScale = fheonHEController.read_scaling_value(convData, dataSizeVector[1]);
+        // reluScale = fheonHEController.read_scaling_value(convData, dataSizeVector[1]);
         // cout << "Relu Scale for Conv2: " << reluScale << endl;
         convData = fheonHEController.bootstrap_function(convData);
-        startIn = get_current_time();
+        
         convData = fheonANNController.he_relu(convData, reluScale, dataSizeVector[1]);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
+        
         convData = fheonHEController.bootstrap_function(convData);
+        cout << "ReLU Scale 2: " << reluScale << endl; 
 
-        startIn = get_current_time();
+        
         convData = fheonANNController.he_avgpool_optimzed(convData, imgWidth[3], channels[2], poolSize, poolSize);
         
         /*** fully connected layers */
-        // reluScale = 15; 
+        reluScale = 15; 
+        printModelLayer("Layer", 3);
         convData = fheonANNController.he_linear(convData, fc1_kernelData, fc1baisVector, channels[3], channels[4], rotPositions);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
-
-        reluScale = fheonHEController.read_scaling_value(convData, channels[4]);
-        convData = fheonHEController.bootstrap_function(convData);
         
-        startIn = get_current_time();
-        convData = fheonANNController.he_relu(convData, reluScale, channels[4]);
-        convData = fheonANNController.he_linear(convData, fc2_kernelData, fc2baisVector, channels[4], channels[5], rotPositions);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
 
-        reluScale = fheonHEController.read_scaling_value(convData, channels[5]);
+        // reluScale = fheonHEController.read_scaling_value(convData, channels[4]);
         convData = fheonHEController.bootstrap_function(convData);
+        cout << "ReLU Scale 3: " << reluScale << endl; 
+        
+        
+        convData = fheonANNController.he_relu(convData, reluScale, channels[4]);
+        printModelLayer("Layer", 4);
+        convData = fheonANNController.he_linear(convData, fc2_kernelData, fc2baisVector, channels[4], channels[5], rotPositions);
+        
 
-        startIn = get_current_time();
+        // reluScale = fheonHEController.read_scaling_value(convData, channels[5]);
+        convData = fheonHEController.bootstrap_function(convData);
+        cout << "ReLU Scale 4: " << reluScale << endl; 
+
+        
         convData = fheonANNController.he_relu(convData, reluScale, channels[5]);
+        printModelLayer("Layer", 5);
         convData = fheonANNController.he_linear(convData, fc3_kernelData, fc3baisVector, channels[5], channels[6], rotPositions);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
+        
 
-        totalTime(measuringTime);
-        measuringTime.clear();
+        
+        
 
-        // string infereMessage = "Total Run Time for Image " + to_string(imageIndex + 1);  
-        // printDuration(inference_time, infereMessage, false);
-        fheonHEController.read_inferenced_label(convData, channels[6], outFile);
+        string infereMessage = "Total Run Time for Image " + to_string(imageIndex + 1);  
+        printDuration(inference_time, infereMessage, false);
+        fheonHEController.read_inferenced_label(convData, channels[6], predictions_file);
     }
-    outFile.close();
+    
     cout << "All predicted results printed to File." << endl;
     clear_mnist_images(mnistData, numImages);
    return 0;

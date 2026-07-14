@@ -4,38 +4,45 @@ project(FHEON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif()
 option( BUILD_STATIC "Set to ON to include static versions of the library" OFF)
 
 ################################################################################
 ################################# BUILD OPTIONS ###############################
 ################################################################################
 
-# Pipeline mode: SINGLE_INPUT, HIGH_THROUGHPUT, or ALL
-set(MODE "ALL" CACHE STRING "Pipeline mode: SINGLE_INPUT, HIGH_THROUGHPUT, or ALL")
-set_property(CACHE MODE PROPERTY STRINGS "ALL" "SINGLE_INPUT" "HIGH_THROUGHPUT")
+# Pipeline mode: SINGLE_INPUTS, BATCH_INPUTS, or ALL
+set(MODE "ALL" CACHE STRING "Pipeline mode: SINGLE_INPUTS, BATCH_INPUTS, or ALL")
+set_property(CACHE MODE PROPERTY STRINGS "ALL" "SINGLE_INPUTS" "BATCH_INPUTS")
 
-# For SINGLE_INPUT: specific model to build (ALL, LeNet5, ResNet20, VGG11, VGG16, ResNet34)
-set(SINGLE_MODEL "ALL" CACHE STRING "Single-input model to build: ALL, LeNet5, ResNet20, VGG11, VGG16, ResNet34")
+# For SINGLE_INPUTS: specific model to build (ALL, BasicMLP, LeNet5, ResNet20, VGG11, VGG16, ResNet34)
+set(SINGLE_MODEL "ALL" CACHE STRING "Single-input model to build: ALL, BasicMLP, LeNet5, ResNet20, VGG11, VGG16, ResNet34")
+set_property(CACHE SINGLE_MODEL PROPERTY STRINGS "ALL" "BasicMLP" "LeNet5" "ResNet20" "VGG11" "VGG16" "ResNet34")
 
 # Default test size for single-input models
 set(TEST_SIZE "10" CACHE STRING "Default test size / batch size for single-input models")
 
-# For HIGH_THROUGHPUT: specific resnet to build (ALL, ResNet20, ResNet34) and batch size
+# For BATCH_INPUTS: specific resnet to build (ALL, ResNet20, ResNet34) and batch size
 set(BATCH_MODEL "ALL" CACHE STRING "Batch model to build: ALL, ResNet20, ResNet34")
+set_property(CACHE BATCH_MODEL PROPERTY STRINGS "ALL" "ResNet20" "ResNet34")
+
 set(BATCH_SIZE "ALL" CACHE STRING "Batch size: ALL, 16, 32, 64, 128, 256, 512")
+set_property(CACHE BATCH_SIZE PROPERTY STRINGS "ALL" "16" "32" "64" "128" "256" "512")
 
 # Validate inputs
-if(NOT MODE MATCHES "SINGLE_INPUT|HIGH_THROUGHPUT|ALL")
-    message(FATAL_ERROR "MODE must be SINGLE_INPUT, HIGH_THROUGHPUT, or ALL")
+if(NOT MODE MATCHES "SINGLE_INPUTS|BATCH_INPUTS|ALL")
+    message(FATAL_ERROR "MODE must be SINGLE_INPUTS, BATCH_INPUTS, or ALL")
 endif()
 
-if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
-    if(NOT SINGLE_MODEL MATCHES "ALL|LeNet5|ResNet20|VGG11|VGG16|ResNet34")
-        message(FATAL_ERROR "SINGLE_MODEL must be ALL, LeNet5, ResNet20, VGG11, VGG16, or ResNet34")
+if(MODE STREQUAL "SINGLE_INPUTS" OR MODE STREQUAL "ALL")
+    if(NOT SINGLE_MODEL MATCHES "ALL|BasicMLP|LeNet5|ResNet20|VGG11|VGG16|ResNet34")
+        message(FATAL_ERROR "SINGLE_MODEL must be ALL, BasicMLP, LeNet5, ResNet20, VGG11, VGG16, or ResNet34")
     endif()
 endif()
 
-if(MODE STREQUAL "HIGH_THROUGHPUT" OR MODE STREQUAL "ALL")
+if(MODE STREQUAL "BATCH_INPUTS" OR MODE STREQUAL "ALL")
     if(NOT BATCH_MODEL MATCHES "ALL|ResNet20|ResNet34")
         message(FATAL_ERROR "BATCH_MODEL must be ALL, ResNet20, or ResNet34")
     endif()
@@ -44,31 +51,60 @@ if(MODE STREQUAL "HIGH_THROUGHPUT" OR MODE STREQUAL "ALL")
     endif()
 endif()
 
+###############################################################################
+
+################################################################################
+# Find OpenFHE (and HEXL if available)
+################################################################################
+
+# Try to locate HEXL first. If it is not installed separately, this will not fail.
+find_package(HEXL CONFIG QUIET)
+
 find_package(OpenFHE CONFIG REQUIRED)
-if (OpenFHE_FOUND)
+
+if(OpenFHE_FOUND)
     message(STATUS "FOUND PACKAGE OpenFHE")
     message(STATUS "OpenFHE Version: ${BASE_OPENFHE_VERSION}")
     message(STATUS "OpenFHE installed as shared libraries: ${OpenFHE_SHARED}")
     message(STATUS "OpenFHE include files location: ${OpenFHE_INCLUDE}")
     message(STATUS "OpenFHE lib files location: ${OpenFHE_LIBDIR}")
     message(STATUS "OpenFHE Native Backend size: ${OpenFHE_NATIVE_SIZE}")
+
+    message(STATUS "OpenFHE Shared Libraries: ${OpenFHE_SHARED_LIBRARIES}")
+    message(STATUS "OpenFHE Static Libraries: ${OpenFHE_STATIC_LIBRARIES}")
+
+    if(TARGET HEXL::hexl)
+        message(STATUS "HEXL target found.")
+    else()
+        message(STATUS "HEXL target NOT found.")
+    endif()
+
 else()
     message(FATAL_ERROR "PACKAGE OpenFHE NOT FOUND")
-endif ()
+endif()
+
+################################################################################
+# Build configuration
+################################################################################
 
 message(STATUS "Build Configuration:")
 message(STATUS "  Mode: ${MODE}")
-if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
+
+if(MODE STREQUAL "SINGLE_INPUTS" OR MODE STREQUAL "ALL")
     message(STATUS "  Single Model: ${SINGLE_MODEL}")
 endif()
-if(MODE STREQUAL "HIGH_THROUGHPUT" OR MODE STREQUAL "ALL")
+
+if(MODE STREQUAL "BATCH_INPUTS" OR MODE STREQUAL "ALL")
     message(STATUS "  Batch Model: ${BATCH_MODEL}")
     message(STATUS "  Batch Size: ${BATCH_SIZE}")
 endif()
 
-set(CMAKE_CXX_FLAGS ${OpenFHE_CXX_FLAGS})
+set(CMAKE_CXX_FLAGS "${OpenFHE_CXX_FLAGS} -O3 -DNDEBUG -march=native")
 
-# Grouping include directories
+################################################################################
+# Include directories
+################################################################################
+
 include_directories(
     ${OPENMP_INCLUDES}
     ${OpenFHE_INCLUDE}
@@ -76,43 +112,51 @@ include_directories(
     ${OpenFHE_INCLUDE}/core
     ${OpenFHE_INCLUDE}/pke
     ${OpenFHE_INCLUDE}/binfhe
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+################################################################################
+# Link directories
+################################################################################
 
-# Grouping link directories
 link_directories(
     ${OpenFHE_LIBDIR}
     ${OPENMP_LIBRARIES}
 )
 
-# Setting compiler-specific flags
+################################################################################
+# Compiler flags
+################################################################################
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lstdc++fs")
 endif()
 
-# Handling static vs shared library linking
+################################################################################
+# Libraries
+################################################################################
+
 if(BUILD_STATIC)
     set(CMAKE_EXE_LINKER_FLAGS "${OpenFHE_EXE_LINKER_FLAGS} -static")
     link_libraries(${OpenFHE_STATIC_LIBRARIES} stdc++fs)
 else()
-    set(CMAKE_EXE_LINKER_FLAGS ${OpenFHE_EXE_LINKER_FLAGS})
+    set(CMAKE_EXE_LINKER_FLAGS "${OpenFHE_EXE_LINKER_FLAGS}")
     link_libraries(${OpenFHE_SHARED_LIBRARIES} stdc++fs)
 endif()
 
-# Optional HEXL support
 if(TARGET HEXL::hexl)
-    message(STATUS "HEXL found, linking HEXL::hexl")
     link_libraries(HEXL::hexl)
 endif()
+
 
 ################################################################################
 ############################## SINGLE INPUT MODELS #############################
 ################################################################################
 
-if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
+if(MODE STREQUAL "SINGLE_INPUTS" OR MODE STREQUAL "ALL")
     # Grouping HESingleModels source files
     set(HESingleModels_SOURCES
+        BasicMLP.cpp
         LeNet5.cpp
         ResNet20Basic.cpp
         ResNet20DataPreprocessed.cpp
@@ -136,6 +180,8 @@ if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
         
         set(should_build FALSE)
         if(SINGLE_MODEL STREQUAL "ALL")
+            set(should_build TRUE)
+        elseif(SINGLE_MODEL STREQUAL "BasicMLP" AND base_name STREQUAL "BasicMLP")
             set(should_build TRUE)
         elseif(SINGLE_MODEL STREQUAL "LeNet5" AND base_name STREQUAL "LeNet5")
             set(should_build TRUE)
@@ -161,12 +207,11 @@ if(MODE STREQUAL "SINGLE_INPUT" OR MODE STREQUAL "ALL")
     endforeach()
 endif()
 
-
 ###############################################################################
 ############################# BATCH MODELS ####################################
 ###############################################################################
 
-if(MODE STREQUAL "HIGH_THROUGHPUT" OR MODE STREQUAL "ALL")
+if(MODE STREQUAL "BATCH_INPUTS" OR MODE STREQUAL "ALL")
     # Grouping HEBatchModels source files
     set(HEBatchModels_SOURCES
         TResNet20N16.cpp

@@ -37,6 +37,11 @@
 
 #include <iostream>
 #include <cmath>
+#include <vector>
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <thread>
 #include <openfhe.h>
 
 using namespace std;
@@ -83,6 +88,20 @@ namespace utilsbatchdata {
     }
 
     /**
+     * @brief Flatten a 2D vector into a 1D vector.
+     * 
+     * @param data 2D vector to flatten.
+     * @return 1D vector containing all elements in row-major order.
+     */
+    static inline vector<double> flatten_csv_data(const vector<vector<double>>& data) {
+        vector<double> flattened;
+        for (const auto& row : data) {
+            flattened.insert(flattened.end(), row.begin(), row.end());
+        }
+        return flattened;
+    }
+
+    /**
      * @brief Load and replicate bias values for batched processing.
      *
      * Reads the first row of a CSV file as bias values and repeats each bias 
@@ -99,18 +118,15 @@ namespace utilsbatchdata {
      *
      * @throws std::runtime_error if the CSV is empty or does not contain enough bias values.
      */
-    static inline vector<vector<double>> load_batch_bias(
-        const string& fileName,
-        int outputChannels,
-        int batchSize,
-        int inputSize
-    ) {
+    static inline vector<vector<double>> load_batch_bias(const string& fileName, int outputChannels,
+        int batchSize, int inputSize) {
+            
         vector<vector<double>> data = loadCSV(fileName);
         if (data.empty()) {
             throw runtime_error("CSV file is empty or failed to load.");
         }
 
-        vector<double> raw_bias = data[0];
+        vector<double> raw_bias = flatten_csv_data(data);
         if (raw_bias.size() < static_cast<size_t>(outputChannels)) {
             throw runtime_error("Not enough bias values in CSV for the requested output channels.");
         }
@@ -121,7 +137,7 @@ namespace utilsbatchdata {
 
         for (int outCh = 0; outCh < outputChannels; outCh++) {
             double biasValue = raw_bias[outCh];
-            if( abs(biasValue) < 1e-20){
+            if( abs(biasValue) < 1e-10){
                 biasValue = 0.0;
             }
             fill(reshapedBias[outCh].begin(), reshapedBias[outCh].end(), biasValue);
@@ -155,14 +171,9 @@ namespace utilsbatchdata {
      *
      * @throws std::runtime_error if the CSV does not contain enough weights to fill the requested shape.
      */
-    static inline vector<vector<vector<vector<vector<double>>>>> load_batch_weights(
-        const string& fileName,
-        int outputChannels,
-        int inputChannels,
-        int batchSize,
-        int rowsWidth,
-        int imgCols
-    ) {
+    static inline vector<vector<vector<vector<vector<double>>>>> load_batch_weights(const string& fileName, int outputChannels,
+        int inputChannels, int batchSize, int rowsWidth, int imgCols) {
+
         // Load CSV data
         vector<vector<double>> data = loadCSV(fileName);
         if (data.empty()) {
@@ -170,7 +181,7 @@ namespace utilsbatchdata {
         }
 
         // Flatten raw weights from CSV
-        vector<double> raw_weights = data[0];  // just take the first row for now
+        vector<double> raw_weights = flatten_csv_data(data);
         size_t indexVal = 0;
 
         // Reshaped data: [outputChannel][inputChannel][batch][rows][cols]
@@ -192,6 +203,7 @@ namespace utilsbatchdata {
                 for (int r = 0; r < rowsWidth; r++) {
                     for (int c = 0; c < imgCols; c++) {
                         if (indexVal >= raw_weights.size()) {
+                            cout << "raw weights size: " <<  raw_weights.size() << " -- indexVal: " << indexVal << endl; 
                             throw runtime_error("Not enough weights in CSV to fill the requested shape.");
                         }
                         double cellVal = raw_weights[indexVal++];
@@ -228,19 +240,14 @@ namespace utilsbatchdata {
      *
      * @return 3D vector of size [outputChannels][inputChannels][batchSize*inputSize].
      */
-    static inline vector<vector<vector<double>>> load_shortcut_batch_weights(
-        string fileName,
-        int batchSize,
-        int outputChannels,
-        int inputChannels,
-        int inputSize
-    ) {
+    static inline vector<vector<vector<double>>> load_shortcut_batch_weights(string fileName,  int batchSize,
+        int outputChannels, int inputChannels, int inputSize) {
+
         vector<vector<double>> data = loadCSV(fileName);
         if (data.empty()) {
             throw runtime_error("CSV file is empty or failed to load.");
         }
-
-        vector<double> raw_weights = data[0];
+        vector<double> raw_weights = flatten_csv_data(data);
         int totalInSize = batchSize * inputSize;
 
         // Allocate [outputChannels][inputChannels][totalInSize]
@@ -253,7 +260,7 @@ namespace utilsbatchdata {
         for (int i = 0; i < outputChannels; i++) {
             for (int j = 0; j < inputChannels; j++) {
                 double cellVal = raw_weights[indexVal++];
-                if( abs(cellVal) < 1e-20){
+                if( abs(cellVal) < 1e-10){
                     cellVal = 0.0;
                 }
                 std::fill(reshapedData[i][j].begin(), reshapedData[i][j].end(), cellVal);
@@ -281,18 +288,14 @@ namespace utilsbatchdata {
      *
      * @throws std::runtime_error if CSV is empty or does not contain enough weights.
      */
-    static inline vector<vector<double>> load_batch_fc_weights(
-        const string& fileName,
-        int outputChannels,
-        int batchSize,
-        int inputChannels) {
+    static inline vector<vector<double>> load_batch_fc_weights(const string& fileName, int outputChannels,
+        int batchSize, int inputChannels) {
 
         vector<vector<double>> data = loadCSV(fileName);
         if (data.empty()) {
             throw runtime_error("CSV file is empty or failed to load.");
         }
-
-        vector<double> raw_weights = data[0];
+        vector<double> raw_weights = flatten_csv_data(data);
         if (raw_weights.size() < static_cast<size_t>(outputChannels * inputChannels)) {
             throw runtime_error("Not enough weights in CSV for requested dimensions.");
         }
@@ -305,7 +308,7 @@ namespace utilsbatchdata {
             vector<double> singleInputChannel(inputChannels);
             for (int inCh = 0; inCh < inputChannels; inCh++) {
                 double cellVal =  raw_weights[indexVal++];
-                if( abs(cellVal) < 1e-20){
+                if( abs(cellVal) < 1e-10){
                     cellVal = 0.0;
                 }
                 singleInputChannel[inCh] = cellVal;
@@ -335,10 +338,8 @@ namespace utilsbatchdata {
      * @return Flattened vector<double> of size batchSize * outputChannels,
      *         ordered as [batch0: all biases][batch1: all biases]...
      */
-    static inline vector<double> load_batch_fc_bias(
-        const string& fileName,
-        int outputChannels,
-        int batchSize) {
+    static inline vector<double> load_batch_fc_bias(const string& fileName,
+        int outputChannels, int batchSize) {
     
         vector<vector<double>> data = loadCSV(fileName);
         if (data.empty()) {
@@ -346,17 +347,14 @@ namespace utilsbatchdata {
         }
 
         // Take the first row as the bias values
-        vector<double> singleOutputChannels = data[0];
+        vector<double> singleOutputChannels = flatten_csv_data(data);
         if (singleOutputChannels.size() < static_cast<size_t>(outputChannels)) {
             throw runtime_error("Not enough bias values in CSV for requested output channels.");
         }
 
-        // cout << "Size of channels: " << singleOutputChannels.size() << endl;
-        // cout << "Single Data: " << singleOutputChannels << endl; 
-
         // Clean small values (treat near-zero as 0.0)
         for (double& val : singleOutputChannels) {
-            if (abs(val) < 1e-20) {
+            if (abs(val) < 1e-10) {
                 val = 0.0;
             }
         }
@@ -390,11 +388,9 @@ namespace utilsbatchdata {
      *
      * @return Reshaped data as [inputChannels][batchSize * inputSize].
      */
-    static inline vector<vector<double>> convert_inputData(
-        const vector<vector<double>>& inputDatas, 
-        int batchSize, 
-        int inputChannels, 
-        int inputSize) {
+    static inline vector<vector<double>> convert_inputData(const vector<vector<double>>& inputDatas, 
+        int batchSize, int inputChannels, int inputSize) {
+
         vector<vector<double>> reshapedData(inputChannels, vector<double>(batchSize * inputSize));
 
         for (int ch = 0; ch < inputChannels; ch++) {
@@ -414,7 +410,6 @@ namespace utilsbatchdata {
                 }
             }
         }
-
         return reshapedData;
     }
 

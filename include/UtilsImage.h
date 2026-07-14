@@ -37,6 +37,7 @@
 
 #include <iostream>
 #include <openfhe.h>
+#include "Utils.h"
 
 using namespace std;
 
@@ -157,7 +158,9 @@ namespace utilsimages {
             string filename = (fileIndex < 10 ? "000" : (fileIndex < 100 ? "00" : (fileIndex < 1000 ? "0" : ""))) + to_string(fileIndex) + ".bin";
             string filepath = folderPath + "/" + filename;
 
-            cout << "Loading image: " << filepath << endl;
+            if (utils::verbose_level >= 1) {
+                cout << "Loading image: " << filepath << endl;
+            }
 
             ifstream file(filepath, ios::binary);
             if (!file.is_open()) {

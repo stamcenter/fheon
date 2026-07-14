@@ -42,7 +42,7 @@ WORKDIR /app
 ARG TEST_SIZE=10
 RUN mkdir -p build && \
     cd build && \
-    cmake -DMODE=SINGLE_INPUT -DSINGLE_MODEL=ALL -DTEST_SIZE=${TEST_SIZE} .. && \
+    cmake -DMODE=SINGLE_INPUTS -DSINGLE_MODEL=ALL -DTEST_SIZE=${TEST_SIZE} .. && \
     make -j$(nproc)
 
 # ==============================================================================

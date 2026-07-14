@@ -30,18 +30,17 @@
 #include "FHEONANNController.h"
 #include "FHEONANNBatchController.h"
 
-using namespace std;
-CryptoContext<DCRTPoly> context;
-FHEONHEController fheonHEController(context);
-
 #ifndef DEFAULT_TEST_SIZE
-#define DEFAULT_TEST_SIZE 256
+#define DEFAULT_TEST_SIZE 250
 #endif
 
 #ifndef INDEX_VALUE
 #define INDEX_VALUE 0
 #endif
 
+using namespace std;
+CryptoContext<DCRTPoly> context;
+FHEONHEController fheonHEController(context);
 vector<Ctext> shortcut_convolution_block(FHEONHEController &fheonHEController, FHEONANNBatchController fheonANNBatchController, string layer, vector<Ctext>& encrytedInputs, int batchSize, 
                             int &dataWidth, int &dataSize, int inputChannels, int outputChannels, int stride);
 vector<Ctext> convolution_block(FHEONHEController &fheonHEController, FHEONANNBatchController fheonANNBatchController, string layer, vector<Ctext>& encrytedInputs, int batchSize, 
@@ -50,31 +49,38 @@ vector<Ctext> resnet_block(FHEONHEController &fheonHEController, FHEONANNBatchCo
                  int inputChannels, int outputChannels, int reluScale, bool bootstrapState, bool shortcutState);
 Ctext fc_layer_block(FHEONHEController &fheonHEController, FHEONANNBatchController fheonANNBatchController, string layer, Ctext encrytedInput, int batchSize, int inputChannels, int outputChannels, int rotPositions);
 
-vector<int> measuringTime;
-vector<int> intermTime;
-auto startIn = get_current_time();
 int batchSize = 16;
 int scalingFact = 2; 
 
 int main(int argc, char *argv[]) {
+    weights_folder = "./../weights/resnet34/";
+    predictions_file = "./../results/TresNet34/fhepredictions.txt";
+    auto runtime_config = parse_runtime_args(argc, argv, DEFAULT_TEST_SIZE, INDEX_VALUE);
+    int test_size = runtime_config.test_size;
+    int index_value = runtime_config.index_value;
 
     auto begin_time = startTime();
     printWelcomeMessage();
     /*** Generate the context of the project in the FHEONHEController and pass it to the SnnController */
-     int ringDegree = 15;
-    int numSlots = 14;
-    int circuitDepth = 11;
-    int dcrtBits = 46;
-    int firstMod = 50;
-    int digitSize = 4;
-    vector<uint32_t> levelBudget = {3, 3};
-    int serialize = true;
-    fheonHEController.generate_context(ringDegree, numSlots, circuitDepth, dcrtBits, firstMod, digitSize, levelBudget, serialize);
+    bool loadContext = runtime_config.load_context;
+    FHEONHEController::HEConfig heinitConfig;
+    heinitConfig.ringDim = 15;
+    heinitConfig.numSlots = 14;
+    heinitConfig.mlevelBootstrap = 11;
+    heinitConfig.dcrtBits = 46;
+    heinitConfig.firstMod = 50;
+    heinitConfig.numDigits = 4;
+    heinitConfig.levelBudget = {3, 3};
+    heinitConfig.serialize = true;
+    if (!runtime_config.keys_folder.empty()) {
+        heinitConfig.keysFolder = runtime_config.keys_folder;
+    }
+    fheonHEController.load_context(heinitConfig, loadContext);
     context = fheonHEController.getContext();
     FHEONANNController fheonANNController(context);
     FHEONANNBatchController fheonANNBatchController( context);
-    printDuration(begin_time, "Context Generation and Keys Serialization", false);
-    cout << "---------------------------------RESNET34-------------"<< to_string(DEFAULT_TEST_SIZE) << "--------------------------" << endl; 
+    printDuration(begin_time, loadContext ? "Context Loaded" : "Context Generated and Keys Serialization", false);
+    cout << "---------------------------------RESNET34-------------"<< to_string(test_size) << "--------------------------" << endl; 
     
     /**** Read the CIFAR-10 Images and inference them */
     int img_cols = 32;
@@ -88,6 +94,8 @@ int main(int argc, char *argv[]) {
     vector<int> dataWidths = {32, 16, 8, 4, 1};
     vector<int> dataSizes = {1024, 256, 64, 16};
     int rotPositions = 32;
+    int baseIndex = 40;
+    int fcRotIndex = 400;
     
     //** generate rotation keys for conv_layer 1 */
     auto conv1_keys = fheonANNBatchController.generate_convolution_batch_rotation_positions(batchSize, dataWidths[0],  kernelWidth, paddingLen, stride);
@@ -100,8 +108,8 @@ int main(int argc, char *argv[]) {
     auto conv8_keys = fheonANNBatchController.generate_convolution_batch_rotation_positions(batchSize, dataWidths[3],  kernelWidth, paddingLen, shortcutstride);
 
     auto avg_keys = fheonANNBatchController.generate_avgpool_batch_optimized_rotation_positions(batchSize, dataWidths[3], avgpoolSize, avgpoolSize, true, rotPositions);
-    auto convert_keys = fheonANNBatchController.generate_batch_inputs_converter_rotation_positions(batchSize,  channels[4], dataWidths[4]);
-    auto fc_keys = fheonANNBatchController.generate_linear_batch_rotation_positions(batchSize, {channels[5]}, {channels[4]}, rotPositions);
+    auto convert_keys = fheonANNBatchController.generate_batch_inputs_converter_rotation_positions(batchSize,  channels[4], dataWidths[4], baseIndex);
+    auto fc_keys = fheonANNBatchController.generate_linear_batch_rotation_positions(batchSize, {channels[5]}, {channels[4]}, fcRotIndex);
     /************************************************************************************************ */
     vector<vector<int>> rotkeys;
     
@@ -138,12 +146,12 @@ int main(int argc, char *argv[]) {
     printDuration(begin_rotkeygen_time, "Rotation KeyGen Time", false);
     /********************************************************************************************************************************************/;
     
-    int numImages = DEFAULT_TEST_SIZE+INDEX_VALUE;
+    int numImages = test_size+index_value;
     int dataSize = img_depth*pow(img_cols, 2);
-    string cifar100tPath = "./../images/cifar-100-binary/test.bin";
+    
     vector<vector<double>> imagesData = read_images(cifar100tPath, numImages, dataSize);
-    ofstream outFile;
-    outFile.open("./../results/TresNet34/fhepredictions.txt", ios_base::app);
+    
+    
     Ctext convData;
     Ptext decryptedData;
     int polyDegee = 59;
@@ -168,96 +176,61 @@ int main(int argc, char *argv[]) {
         
         /************************************************************************************************ */
         auto inference_time = startTime();
-        cout<< "Layer 0" << endl;
         auto convData = convolution_block(fheonHEController, fheonANNBatchController,  "layer0_conv1", encryptedInputs, batchSize, dataWidths[0], dataSizes[0], channels[0], channels[1], stride);
 
         int totalSize = batchSize * dataSizes[0];
         auto scalingVals = fheonHEController.read_batch_scaling_values(convData, channels[1], totalSize);
     
-        startIn = get_current_time();
+        
         convData = fheonANNBatchController.he_batch_relu(convData, scalingVals, channels[1], totalSize, polyDegee);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
-        printDuration(inference_time, "run time", false);
+        
 
-
-        cout<< endl<<  "Layer 1" << endl;
-        cout <<"Block 1 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer1_block1", convData, batchSize, dataWidths[0], dataSizes[0], channels[1], channels[1], reluScale, false, false);
-        cout <<"Block 2 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer1_block2", convData, batchSize, dataWidths[0], dataSizes[0], channels[1], channels[1], reluScale, true, false);
-        cout <<"Block 3 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer1_block3", convData, batchSize, dataWidths[0], dataSizes[0], channels[1], channels[1], reluScale, true, false);
-        // fheonHEController.read_batch_minmax(convData, channels[1], totalSize);
-        printDuration(inference_time, "run time", false);
 
-
-        cout<< endl<< "Layer 2" << endl;
-        cout <<"Block 1 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer2_block1", convData, batchSize, dataWidths[0], dataSizes[0], channels[1], channels[2], reluScale, true, true);
         totalSize = batchSize * dataSizes[1];
-        cout <<"Block 2 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer2_block2", convData, batchSize, dataWidths[1], dataSizes[1], channels[2], channels[2], reluScale, true, false);
-        cout <<"Block 3 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer2_block3", convData, batchSize, dataWidths[1], dataSizes[1], channels[2], channels[2], reluScale, true, false);
-        cout <<"Block 4 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer2_block4", convData, batchSize, dataWidths[1], dataSizes[1], channels[2], channels[2], reluScale, true, false);
-        // fheonHEController.read_batch_minmax(convData, channels[2], totalSize);
-        printDuration(inference_time, "run time", false);
 
-
-        cout<< endl<<  "Layer 3" << endl;
-        cout <<"Block 1 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer3_block1", convData, batchSize, dataWidths[1], dataSizes[1], channels[2], channels[3], reluScale, true, true);
         totalSize = batchSize * dataSizes[2];
-        cout <<"Block 2 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer3_block2", convData, batchSize, dataWidths[2], dataSizes[2], channels[3], channels[3], reluScale, true, false);
-        cout <<"Block 3" << endl;
+
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer3_block3", convData, batchSize, dataWidths[2], dataSizes[2], channels[3], channels[3], reluScale, true, false);
-        cout <<"Block 4" << endl;
+
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer3_block4", convData, batchSize, dataWidths[2], dataSizes[2], channels[3], channels[3], reluScale, true, false);
-        cout <<"Block 5" << endl;
+
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer3_block5", convData, batchSize, dataWidths[2], dataSizes[2], channels[3], channels[3], reluScale, true, false);
-        cout <<"Block 6" << endl;
+
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer3_block6", convData, batchSize, dataWidths[2], dataSizes[2], channels[3], channels[3], reluScale, true, false);
-        // fheonHEController.read_batch_minmax(convData, channels[3], totalSize);
-        printDuration(inference_time, "run time", false);
 
-
-        cout<< endl<<  "Layer 4" << endl;
-        cout <<"Block 1 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer4_block1", convData, batchSize, dataWidths[2], dataSizes[2], channels[3], channels[4], reluScale, true, true);
         totalSize = batchSize * dataSizes[3];
-        cout <<"Block 2 " << endl;
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer4_block2", convData, batchSize, dataWidths[3], dataSizes[3], channels[4], channels[4], reluScale, true, false);
-        cout <<"Block 3" << endl;
+
         convData = resnet_block(fheonHEController, fheonANNBatchController, "layer4_block3", convData, batchSize, dataWidths[3], dataSizes[3], channels[4], channels[4], reluScale, true, false);
-        // fheonHEController.read_batch_minmax(convData, channels[4], totalSize);
-        printDuration(inference_time, "run time", false);
 
-        cout<< "Classification" << endl;
-        startIn = get_current_time();
-        convData = fheonHEController.batch_bootstrap_function(convData, channels[4], bootstrap_level);
-        intermTime.push_back(measureTime(startIn, get_current_time()));
         
-        startIn = get_current_time();
+        convData = fheonHEController.batch_bootstrap_function(convData, channels[4], bootstrap_level);
+                
+        
         convData = fheonANNBatchController.he_batch_globalpool(convData, batchSize, dataWidths[3], channels[4], avgpoolSize, rotPositions);
-        measuringTime.push_back(measureTime(startIn, get_current_time()));
-        auto fcData = fheonANNBatchController.he_batch_inputs_converter(convData, batchSize, channels[4], dataWidths[4]);
-        fcData = fc_layer_block(fheonHEController, fheonANNBatchController, "layer_fc", fcData, batchSize, channels[4], channels[5], rotPositions);
+        
+        auto fcData = fheonANNBatchController.he_batch_inputs_converter(convData, batchSize, channels[4], dataWidths[4], baseIndex);
+        fcData = fc_layer_block(fheonHEController, fheonANNBatchController, "layer_fc", fcData, batchSize, channels[4], channels[5], fcRotIndex);
 
-        printTimeWithMessage("ResNet34 Circuit : ", measuringTime);
-        measuringTime.clear();
-        printTimeWithMessage("ResNet34 Bootsrapping: ", intermTime);
-        intermTime.clear();
-
-
+                
+                
         string infereMessage = "Batch Size ("+ to_string(batchSize) +") -- Total Run Time for Images " + to_string(imgIdx + 1) + " - " +  to_string(imgIdx+1+batchSize);  
         printDuration(inference_time, infereMessage, false);
-        auto predictions = fheonHEController.read_batch_inferenced_label(fcData, batchSize, channels[5], outFile);
+        auto predictions = fheonHEController.read_batch_inferenced_label(fcData, batchSize, channels[5], predictions_file);
 
         cout << "Batch Predictions: " << predictions << endl;
     }
-    outFile.close();
+    
     cout << "All predicted results printed to File." << endl;
     clear_images(imagesData, numImages);
    return 0;
@@ -270,13 +243,13 @@ vector<Ctext> shortcut_convolution_block(FHEONHEController &fheonHEController, F
     int outputSize = pow(outputWidth, 2);
     
     /******** DOUBLE CHECK THIS KERNEL ENCODING */
-    string dataPath = "./../weights/resnet34/"+layer;
+    string dataPath = weights_folder+layer;
     auto rawKernelData = load_shortcut_batch_weights(dataPath+"_shortcut_weight.csv", batchSize, outputChannels, inputChannels, dataSize); 
     auto rawBiasData = load_batch_bias(dataPath+"_shortcut_bias.csv", outputChannels, batchSize, outputSize);
 
-    startIn = get_current_time();
+    
     auto conv_data = fheonANNBatchController.he_batch_convolution_shortcut_optimized(fheonHEController, encrytedInputs, rawKernelData, rawBiasData, batchSize, dataWidth, inputChannels, outputChannels, stride);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
     
     rawKernelData.clear();
     rawKernelData.shrink_to_fit();
@@ -287,17 +260,18 @@ vector<Ctext> shortcut_convolution_block(FHEONHEController &fheonHEController, F
 
 vector<Ctext> convolution_block(FHEONHEController &fheonHEController, FHEONANNBatchController fheonANNBatchController, string layer, vector<Ctext>& encrytedInputs, int batchSize, 
                             int &dataWidth, int &dataSize, int inputChannels, int outputChannels, int stride){
+    if (layer.find("block") == std::string::npos && layer.find("_conv") == std::string::npos) { printModelLayer(layer); }
      
     int kernelWidth = 3;
     int outputWidth = dataWidth/stride;
     int outputSize = pow(outputWidth, 2);
-    string dataPath = "./../weights/resnet34/"+layer;
+    string dataPath = weights_folder+layer;
     auto rawKernelData = load_batch_weights(dataPath+"_weight.csv", outputChannels, inputChannels, batchSize, kernelWidth, kernelWidth);
     auto rawBiasData = load_batch_bias(dataPath+"_bias.csv", outputChannels, batchSize, outputSize);
 
-    startIn = get_current_time();
+    
     auto conv_data = fheonANNBatchController.he_batch_convolution_optimized(fheonHEController, encrytedInputs, rawKernelData, rawBiasData, batchSize, dataWidth, inputChannels, outputChannels, stride);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
         
     rawKernelData.clear();
     rawKernelData.shrink_to_fit();
@@ -307,9 +281,9 @@ vector<Ctext> convolution_block(FHEONHEController &fheonHEController, FHEONANNBa
     return conv_data;
 }
 
-
 vector<Ctext> resnet_block(FHEONHEController &fheonHEController, FHEONANNBatchController fheonANNBatchController, string layer, vector<Ctext>& encrytedInputs, int batchSize, int &inputdataWidth, int &inputdataSize,
                  int inputChannels, int outputChannels, int reluScale, bool bootstrapState, bool shortcutState){
+    printModelLayer(layer);
 
     int stride = 1;
     int shortcutStridindLen = 2; 
@@ -322,10 +296,9 @@ vector<Ctext> resnet_block(FHEONHEController &fheonHEController, FHEONANNBatchCo
     vector<Ctext> convData;
 
     if(shortcutState){
-        startIn = get_current_time();
+        
         encrytedInputs = fheonHEController.batch_bootstrap_function(encrytedInputs, inputChannels, bootstrap_level);
-        intermTime.push_back(measureTime(startIn, get_current_time()));
-
+        
         convData = convolution_block(fheonHEController, fheonANNBatchController, layer+"_conv1", encrytedInputs, batchSize, dataWidth, dataSize, inputChannels, outputChannels, shortcutStridindLen);
         shortcuts = shortcut_convolution_block(fheonHEController, fheonANNBatchController, layer, encrytedInputs, batchSize, dataWidth, dataSize, inputChannels, outputChannels, shortcutStridindLen);
         
@@ -338,43 +311,37 @@ vector<Ctext> resnet_block(FHEONHEController &fheonHEController, FHEONANNBatchCo
         convData = convolution_block(fheonHEController, fheonANNBatchController, layer+"_conv1", encrytedInputs, batchSize, dataWidth, dataSize, inputChannels, outputChannels, stride);
     }
     if(bootstrapState){
-        startIn = get_current_time();
+        
         convData = fheonHEController.batch_bootstrap_function(convData, outputChannels, bootstrap_level);
-        intermTime.push_back(measureTime(startIn, get_current_time()));
-    }
+            }
 
     int totalSize = (batchSize*dataSize); 
     auto scalingVals = fheonHEController.read_batch_scaling_values(convData, outputChannels, totalSize);
-    cout << "1st Convolution Scaling Values: " << scalingVals << endl;
 
     
     if(layer == "layer4_block2"){
         for(int i=0; i<outputChannels; i++){
             scalingVals[i] = scalingFact*scalingVals[i]; 
         }
-        cout << "SumScaling Values * ScaleFact -------: " << scalingVals << endl;
     }
 
-
-    startIn = get_current_time();
+    
     convData = fheonANNBatchController.he_batch_relu(convData, scalingVals, outputChannels, totalSize, polyDegee);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
     auto second_convData = convolution_block(fheonHEController, fheonANNBatchController, layer+"_conv2", convData, batchSize, dataWidth, dataSize, outputChannels, outputChannels, stride);
     scalingVals = fheonHEController.read_batch_scaling_values(second_convData, outputChannels, totalSize);
-    cout << "2nd Convolution Scaling Values: " << scalingVals << endl;
 
     vector<Ctext> sum_convData = fheonANNBatchController.he_batch_sum_ciphertexts(second_convData, shortcuts, outputChannels);
 
-    startIn = get_current_time();
+    
     sum_convData = fheonHEController.batch_bootstrap_function(sum_convData, outputChannels, bootstrap_level);
-    intermTime.push_back(measureTime(startIn, get_current_time()));
-
+    
     scalingVals = fheonHEController.read_batch_scaling_values(sum_convData, outputChannels, totalSize);
     cout << "After SumScaling Values-------: " << scalingVals << endl;
     
-    startIn = get_current_time();
+    
     sum_convData = fheonANNBatchController.he_batch_relu(sum_convData, scalingVals, outputChannels, totalSize, polyDegee);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
 
     shortcuts.clear();
     convData.clear();
@@ -382,8 +349,9 @@ vector<Ctext> resnet_block(FHEONHEController &fheonHEController, FHEONANNBatchCo
 }
 
 Ctext fc_layer_block(FHEONHEController &fheonHEController, FHEONANNBatchController fheonANNBatchController, string layer, Ctext encrytedInput, int batchSize, int inputChannels, int outputChannels, int rotPositions){
+    printModelLayer(layer);
    
-    string dataPath = "./../weights/resnet34/"+layer;
+    string dataPath = weights_folder+layer;
      cout << "kernel In: "<< endl;
     auto fc_rawKernelData = load_batch_fc_weights(dataPath+"_weight.csv", outputChannels, batchSize, inputChannels);
     cout << "kernel Inputed: "<< endl;
@@ -398,9 +366,9 @@ Ctext fc_layer_block(FHEONHEController &fheonHEController, FHEONANNBatchControll
     }
     Ptext fc_BiasData = fheonHEController.encode_input(fc_rawBiasData, encodeLevel);
 
-    startIn = get_current_time();
+    
     Ctext fcData = fheonANNBatchController.he_batch_linear(encrytedInput, fc_kernelData, fc_BiasData, batchSize, inputChannels, outputChannels, rotPositions);
-    measuringTime.push_back(measureTime(startIn, get_current_time()));
+    
     fc_kernelData.clear();
     fc_kernelData.shrink_to_fit();
     return fcData;
