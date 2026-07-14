@@ -174,9 +174,6 @@ All compiled executables are placed in the `build/` directory. Each model is com
 ---
 
 
-
----
-
 ### Option B: Docker Setup (Recommended)
 
 FHEON includes a complete multi-stage `Dockerfile` and a developer script `run_docker_script.sh` to automate building and running inside a container.
