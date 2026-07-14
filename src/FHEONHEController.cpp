@@ -265,6 +265,9 @@ void FHEONHEController::generate_context(int ringDim, int numSlots, int mlevelBo
     return;
 }
 
+void FHEONHEController::set_bootstrap_count(int count){
+    num_bootsraps = count;
+}
 
 /**
  * @brief Serialize generated FHE keys (public, secret, mult, sum) to files.
@@ -669,8 +672,14 @@ void FHEONHEController::clear_context(int bootstrapping_key_slots) {
  * @return Refreshed ciphertext.
  */
 Ctext FHEONHEController::bootstrap_function(Ctext& encryptedInput, int encode_level){
+<<<<<<< HEAD
     num_bootsraps++;
     auto start_bootstrap = startTime();
+=======
+
+    num_bootsraps++;
+    cout << "Bootstrapping ciphertext... " << num_bootsraps << endl;
+>>>>>>> cf52dc69588e5fb51f40a99d4063645ddb867801
     Ctext boots_ciphertext = context->EvalBootstrap(encryptedInput, encode_level);
     printBootstrapTiming("    Bootstrapping ciphertext... " + to_string(num_bootsraps), start_bootstrap);
     return boots_ciphertext;
@@ -718,8 +727,13 @@ vector<Ctext> FHEONHEController::batch_bootstrap_function(vector<Ctext>& encrypt
  * @param isTimeMeasurement If true, initialize timing statistics for the image run.
  * @return homomorphically encrypted ciphertext.
  */
+<<<<<<< HEAD
 Ctext FHEONHEController::encrypt_input(vector<double>& inputData, bool isTimeMeasurement) {
    
+=======
+Ctext FHEONHEController::encrypt_input(vector<double>& inputData) {
+    num_bootsraps = 0;
+>>>>>>> cf52dc69588e5fb51f40a99d4063645ddb867801
     Ptext plaintext = context->MakeCKKSPackedPlaintext(inputData, 1, 1);
     plaintext->SetLength(inputData.size());
     auto encryptImage = context->Encrypt(keyPair.publicKey, plaintext);

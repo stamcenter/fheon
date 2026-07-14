@@ -82,9 +82,15 @@ public:
     int num_slots;
     int pLWE;
     int mult_depth = 10;
+<<<<<<< HEAD
     int num_bootsraps = 0;
     // string keys_folder = "/scratch/nnjungle/AllHEkeys/32threads/";
     string keys_folder = "../AllHEKeys/";
+=======
+    int num_bootsraps = 0; 
+    // string keys_folder = "/scratch/nnjungle/HEkeys/";
+    string keys_folder = "../AllHEkeys/";
+>>>>>>> cf52dc69588e5fb51f40a99d4063645ddb867801
     string rotation_prefix = "rotation_keys_"; 
     string mult_prefix = "./mult_keys_";
     string sum_prefix = "./sum_keys_";
@@ -106,9 +112,13 @@ public:
         return context;
     }
 
+<<<<<<< HEAD
     PublicKey<DCRTPoly> getPublicKey() const {
         return keyPair.publicKey;
     }
+=======
+    void set_bootstrap_count(int count = 0);
+>>>>>>> cf52dc69588e5fb51f40a99d4063645ddb867801
 
     /*
      * Generating context, bootstrapping keys, rotation keys and loading them */

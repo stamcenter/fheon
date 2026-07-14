@@ -1454,6 +1454,7 @@ Ctext FHEONANNController::he_relu(Ctext& encryptedInput, double scaleValue,  int
         encryptInn = context->EvalMult(encryptedInput, mask_data);
     }
     else{
+        // cout << "Scale value is less than or equal to 1, using scaleValue = 1 for ReLU approximation." << endl;
         scaleValue = 1;
     }
     
