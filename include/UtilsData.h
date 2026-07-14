@@ -607,11 +607,7 @@ namespace utilsdata {
         std::sort(rotation_positions.begin(), rotation_positions.end());
         rotation_positions.erase(std::unique(rotation_positions.begin(), rotation_positions.end()), rotation_positions.end());
         rotation_positions.erase(std::remove(rotation_positions.begin(), rotation_positions.end(), 0), rotation_positions.end());
-<<<<<<< HEAD
         
-=======
-
->>>>>>> cf52dc69588e5fb51f40a99d4063645ddb867801
         return rotation_positions;
     }
 

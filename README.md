@@ -45,13 +45,13 @@ You can build and run FHEON either **manually (natively)** or via **Docker**. Fo
 ├── HESingleModels/       # Single-input model source code (LeNet5, ResNet20, ResNet34, VGG)
 ├── LICENSE.txt           # MIT License
 ├── README.md             # Project documentation (this file)
-├── appendix.md           # Replication checklist and security notes
+├── appendix.md           # Replication checklist and security notes for PETS/PoPETs 2026 artifact evaluation
 ├── include/              # Header files for HE & NN controller pipelines
 ├── python/               # PyTorch training, BatchNorm folding, and weight export scripts
-├── results/              # Ground truth labels, predictions, and verification utilities
+├── results/              # Ground truth labels, predictions, and results verification utilities
 ├── run_docker_script.sh  # Developer-friendly helper script for Docker container management
 ├── src/                  # Core FHEON implementation files
-└── weights/              # Folded model weights and biases stored in CSV format
+└── weights/              # Model weights and biases stored in CSV format
 ```
 
 ---
@@ -68,6 +68,8 @@ You can build and run FHEON either **manually (natively)** or via **Docker**. Fo
 *   **Resource Footprint**: Setup requires up to 50 GB storage depending on dataset size and caching options (when building OpenFHE and FHEON).
 
 ---
+
+
 
 ### Option A: Native Build (Manual Setup)
 
@@ -99,42 +101,6 @@ mkdir build && cd build
 cmake -DMODE=ALL ..
 make -j$(nproc)
 ```
-
----
-
-### Option B: Docker Setup (Recommended)
-
-FHEON includes a complete multi-stage `Dockerfile` and a developer script `run_docker_script.sh` to automate building and running inside a container.
-
-```bash
-# 1. Pull latest and build the Docker image
-# This compiles OpenFHE and FHEON inside the container (takes ~30-60 mins depending on CPU)
-./run_docker_script.sh build
-
-# 2. Run specific models immediately inside Docker
-./run_docker_script.sh run-lenet5
-./run_docker_script.sh run-resnet20
-./run_docker_script.sh run-resnet34
-
-# 3. Verify predictions and check accuracy inside Docker
-./run_docker_script.sh run-accuracy
-
-# 4. Open an interactive shell inside the container
-./run_docker_script.sh run
-```
-
-#### Docker Helper Commands Reference:
-| Command | Description |
-| :--- | :--- |
-| `build` | Builds the Docker image (compiles OpenFHE and FHEON). |
-| `build-nocache` | Builds the Docker image without cache (forces clean rebuild). |
-| `run` | Starts an interactive bash session in the container. |
-| `run-<model>` | Executes a specific model (options: `lenet5`, `resnet20`, `resnet34`, `vgg11`, `vgg16`). |
-| `run-accuracy` | Runs the Python verification script in Docker. |
-| `clean` | Removes stopped FHEON Docker containers. |
-| `clean-image` | Removes FHEON containers, images, and cached layers completely. |
-
----
 
 ## Build Configuration Options
 
@@ -207,6 +173,45 @@ All compiled executables are placed in the `build/` directory. Each model is com
 
 ---
 
+
+
+---
+
+### Option B: Docker Setup (Recommended)
+
+FHEON includes a complete multi-stage `Dockerfile` and a developer script `run_docker_script.sh` to automate building and running inside a container.
+
+```bash
+# 1. Pull latest and build the Docker image
+# This compiles OpenFHE and FHEON inside the container (takes ~30-60 mins depending on CPU)
+./run_docker_script.sh build
+
+# 2. Run specific models immediately inside Docker
+./run_docker_script.sh run-lenet5
+./run_docker_script.sh run-resnet20
+./run_docker_script.sh run-resnet34
+
+# 3. Verify predictions and check accuracy inside Docker
+./run_docker_script.sh run-accuracy
+
+# 4. Open an interactive shell inside the container
+./run_docker_script.sh run
+```
+
+#### Docker Helper Commands Reference:
+| Command | Description |
+| :--- | :--- |
+| `build` | Builds the Docker image (compiles OpenFHE and FHEON). |
+| `build-nocache` | Builds the Docker image without cache (forces clean rebuild). |
+| `run` | Starts an interactive bash session in the container. |
+| `run-<model>` | Executes a specific model (options: `lenet5`, `resnet20`, `resnet34`, `vgg11`, `vgg16`). |
+| `run-accuracy` | Runs the Python verification script in Docker. |
+| `clean` | Removes stopped FHEON Docker containers. |
+| `clean-image` | Removes FHEON containers, images, and cached layers completely. |
+
+---
+
+
 ## Supported Models
 
 FHEON supports a variety of CNN architectures across different evaluation modes:
@@ -247,13 +252,6 @@ After running the C++ binaries, change into the `results` folder and run `accura
 cd results
 python3 accuracy.py
 ```
-This will print out accuracy comparisons between PyTorch (plaintext reference) and FHE (encrypted inference) for each run model:
-```
-PyTorch LeNet5 Accuracy: 90.0% (9/10 lines)
-FHE LeNet5 Accuracy: 90.0% (9/10 lines)
-PyTorch ResNet20 Accuracy: 100.0% (10/10 lines)
-FHE ResNet20 Accuracy: 100.0% (10/10 lines)
-```
 
 ---
 
@@ -263,32 +261,13 @@ Developers can train models in PyTorch and export them for secure execution unde
 
 ```mermaid
 graph TD
-    A[Train PyTorch CNN] --> B[Fold BatchNorm into Conv Layers]
-    B --> C[Export Weights & Biases to CSV]
-    C --> D[Load CSV in FHEON C++]
-    D --> E[Secure Encrypted Inference]
+    A[Train PyTorch/Tensorflow/Keras CNN] 
+    A --> B[Export Weights & Biases]
+    B --> C[Load Weights in FHEON C++]
+    C --> D[FHEON Secure Encrypted Inference]
 ```
-
-### 1. Fold BatchNorm & Export Weights
-Homomorphic evaluation of BatchNorm layers is computationally prohibitive in the encrypted domain due to division and square root operations. FHEON solves this by **folding BatchNorm parameters** into preceding Convolutional layer weights and biases at inference time.
-
-The script `python/exporting_weights.py` demonstrates this process:
-1. Load a pre-trained PyTorch model.
-2. Mathematically fold running mean, variance, scale ($\gamma$), and shift ($\beta$) parameters directly into the convolution filters:
-   $$W_{\text{folded}} = W \cdot \frac{\gamma}{\sqrt{\sigma^2 + \epsilon}}$$
-   $$B_{\text{folded}} = \gamma \cdot \frac{B - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta$$
-3. Replaces BatchNorm modules with `nn.Identity`.
-4. Saves the folded parameters to 1D flattened CSV files ready to be loaded by the FHEON engine.
-
-Run the script by customizing the data path and loading path inside `python/exporting_weights.py` and running:
-```bash
-cd python
-pip install -r requirements.txt
-python3 exporting_weights.py
-```
-
-### 2. Load Weights in FHEON
-Place the exported `.csv` files into the `weights/` folder under the correct model directory. FHEON's model definitions will automatically load them using the internal parser at runtime.
+### Load Weights in FHEON
+Place the exported `.csv` files into the `weights/` folder under the correct model directory. FHEON's model definitions will automatically load them using the internal parser at runtime. if you use a different directory, you can set the path for the `weights-folder` variable in the `parse_runtime_args` function.
 
 ---
 
