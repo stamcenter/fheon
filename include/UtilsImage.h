@@ -25,7 +25,7 @@
 ********************************************************************************************************************/
 
 /**
- * @file ImageInput
+ * @file UtilsImage.h
  * @brief Utilities for inputting images into HE-friendly neural networks.
  *
  * Provides functions for handling datasets such as CIFAR-10 and MNIST,
@@ -60,11 +60,29 @@ namespace utilsimages {
             cerr << "Error opening CIFAR-10 file!" << endl;
             return {};
         }
-        file.seekg(1, std::ios::cur);  // Skip 1 byte (label)
-        // read images 
-        int total_size = img_size * num_images; 
+        /*** keep the ground-truth labels in memory for the accuracy: each record is its label
+         *   byte(s) followed by the image (CIFAR-100 has a coarse and a fine label, the fine one is kept) */
+        int label_bytes = (full_path.find("cifar-100") != string::npos || full_path.find("cifar100") != string::npos) ? 2 : 1;
+        utils::image_labels.clear();
+        utils::predictions_made = 0;
+        utils::labelled_predictions = 0;
+        utils::correct_predictions = 0;
+        for (int i = 0; i < num_images; ++i) {
+            file.seekg(static_cast<std::streamoff>(i) * (label_bytes + img_size) + (label_bytes - 1), std::ios::beg);
+            char label;
+            if (!file.read(&label, 1)) break;
+            utils::image_labels.push_back(static_cast<unsigned char>(label));
+        }
+        file.clear();
+
+        // read images: every record carries its own label byte(s) in front of the pixels,
+        // so each image is read from the start of its own record
+        size_t total_size = static_cast<size_t>(img_size) * num_images;
         vector<uint8_t> imagePixels(total_size);
-        file.read(reinterpret_cast<char*>(imagePixels.data()), total_size);
+        for (int i = 0; i < num_images; ++i) {
+            file.seekg(static_cast<std::streamoff>(i) * (label_bytes + img_size) + label_bytes, std::ios::beg);
+            file.read(reinterpret_cast<char*>(imagePixels.data()) + static_cast<size_t>(i) * img_size, img_size);
+        }
         vector<vector<double>> allImages;
 
         for (int i = 0; i < num_images; ++i) {
@@ -136,13 +154,13 @@ namespace utilsimages {
     /**
      * @brief Load a batch of individual CIFAR-10 .bin images starting from a given index.
      *
-     * Reads numImages individual .bin files (e.g., 0000.bin, 0001.bin, ...) from the specified folder,
+     * Reads batchSize individual .bin files (e.g., 0000.bin, 0001.bin, ...) from the specified folder,
      * starting from startIndex. Each file contains one image in channel-first order (C, H, W).
      * If normalize is true, applies CIFAR-10 normalization; otherwise, returns raw values.
      *
      * @param folderPath Path to the folder containing .bin files.
      * @param startIndex Starting index for file names (e.g., 0 for 000.bin).
-     * @param numImages Number of images to load.
+     * @param batchSize Number of images to load.
      * @param normalize If true, normalize pixel values with CIFAR-10 mean/std.
      * @return Vector of images, each as a flattened [R,G,B] channel vector.
      */
@@ -224,12 +242,12 @@ namespace utilsimages {
     /**
      * @brief Load a batch of CIFAR-10 labels from a CSV file starting from a given index.
      *
-     * Reads numImages labels from the specified CSV file, starting from startIndex.
+     * Reads batchSize labels from the specified CSV file, starting from startIndex.
      * Each line in the CSV file is expected to contain a single label corresponding to an image.
      *
      * @param folderPath Path to the folder containing labels.csv.
      * @param startIndex Starting index for reading labels (e.g., 0 for the first label).
-     * @param numImages Number of labels to load.
+     * @param batchSize Number of labels to load.
      * @return Vector of labels as doubles.
      */
     static inline vector<double> readBatchedCIFAR10Labels(const string& folderPath, int startIndex, int batchSize ) {
@@ -251,8 +269,9 @@ namespace utilsimages {
                     cerr << "Invalid label: " << line << endl;
                     labels.push_back(0.0);  // Default to 0.0 for invalid labels
                 }
-                currentIndex++;
             }
+            /** every line counts (incrementing only inside the range never reached a startIndex > 0) */
+            currentIndex++;
             if (currentIndex >= startIndex + batchSize) {
                 break;  // Stop reading after we have the required number of labels
             }
@@ -265,16 +284,6 @@ namespace utilsimages {
 
 
      /**
-     * @brief Flatten a 3D vector of doubles into a single 1D vector.
-     *
-     * @param matrix3D Input 3D vector to flatten.
-     * @return Flattened 1D vector containing all elements of the input.
-     */
-
-
-
-
-    /**
      * @brief Read MNIST images from a binary file into a 2D unsigned char array.
      *
      * @param full_path Path to MNIST image file (e.g., train-images.idx3-ubyte).
@@ -307,6 +316,33 @@ namespace utilsimages {
             file.read((char *)&n_cols, sizeof(n_cols)), n_cols = reverseInt(n_cols);
 
             image_size = n_rows * n_cols;
+
+            /*** keep the ground-truth labels in memory for the accuracy: MNIST ships them in a
+             *   separate file next to the images (…-images-idx3-ubyte -> …-labels-idx1-ubyte) */
+            utils::image_labels.clear();
+            utils::predictions_made = 0;
+            utils::labelled_predictions = 0;
+            utils::correct_predictions = 0;
+            string labels_path = full_path;
+            size_t name_pos = labels_path.rfind("images-idx3");
+            if (name_pos != string::npos) {
+                labels_path.replace(name_pos, strlen("images-idx3"), "labels-idx1");
+                ifstream labels_file(labels_path, ios::binary);
+                int labels_magic = 0, number_of_labels = 0;
+                if (labels_file.is_open()) {
+                    labels_file.read((char *)&labels_magic, sizeof(labels_magic)), labels_magic = reverseInt(labels_magic);
+                    labels_file.read((char *)&number_of_labels, sizeof(number_of_labels)), number_of_labels = reverseInt(number_of_labels);
+                    if (labels_magic == 2049 && number_of_labels > 0) {
+                        vector<uchar> raw_labels(number_of_labels);
+                        labels_file.read((char *)raw_labels.data(), number_of_labels);
+                        raw_labels.resize(labels_file.gcount());
+                        utils::image_labels.assign(raw_labels.begin(), raw_labels.end());
+                    }
+                }
+                if (utils::image_labels.empty()) {
+                    cerr << "MNIST labels not found at " << labels_path << ": accuracy will not be reported." << endl;
+                }
+            }
 
             uchar** _dataset = new uchar*[number_of_images];
             for(int i = 0; i < number_of_images; i++) {
@@ -420,6 +456,8 @@ namespace utilsimages {
             delete[] mnistData[i];
         }
         delete[] mnistData;
+        // the models call this once all the images are processed
+        utils::printAccuracy();
     }
 
 
@@ -433,6 +471,8 @@ namespace utilsimages {
     static inline void clear_images(vector<vector<double>> imagesData, int numImages){
         // free the memory
         imagesData.clear();
+        // the models call this once all the images are processed
+        utils::printAccuracy();
     }
 
 

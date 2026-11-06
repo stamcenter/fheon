@@ -25,7 +25,7 @@
 ********************************************************************************************************************/
 
 /**
- * @file DataUtils
+ * @file UtilsData.h
  * @brief Manage data generation, reading from files, and arranging for use in networks.
  *
  * This file provides functions to handle data preparation tasks, including
@@ -190,7 +190,7 @@ namespace utilsdata {
     /**
      * @brief Generate a binary mask of ones followed by zeros.
      * 
-     * @param ones_width Number of ones.
+     * @param ones_size Number of ones.
      * @param vector_size Total size of mask.
      * @return Mask vector.
     */
@@ -354,6 +354,47 @@ namespace utilsdata {
             logValue++;
         }
         return logValue;
+    }
+
+    /**
+     * @brief Tile a ciphertext's real data across its full slot capacity so
+     * that later EvalRotate/EvalFastRotation calls behave as true circular
+     * rotation over exactly `elementCount` slots, instead of leaking through
+     * the empty (zero) padding between `elementCount` and `totalSlots`.
+     *
+     * CKKS packs every ciphertext into a fixed `totalSlots`-wide ring shared
+     * by the whole network, but a given layer's real data
+     * (batchSize * width * width) is often smaller than that ring. Rotating
+     * such a ciphertext directly wraps through true zeros near the start/end
+     * of the real data instead of the intended circular neighbor (e.g. the
+     * last row of the last batch image), corrupting any tap whose offset
+     * would otherwise need that wraparound. Doubling the covered range
+     * (add a copy of itself rotated by -coverage, repeatedly) until it fills
+     * the ring fixes this: every slot in [0, elementCount) now correctly
+     * reads its circular neighbor for any rotation used by 3x3-kernel
+     * convolution taps. No-op (returns the input unchanged) when the ring is
+     * already exactly (or not evenly divisible into) `elementCount` slots.
+     *
+     * @param context      CryptoContext used for the rotation/addition ops.
+     * @param ciphertext   Ciphertext holding real data in its first elementCount slots.
+     * @param elementCount Number of meaningful (real) slots, e.g. batchSize*width*width.
+     * @param totalSlots   Total slot capacity of the ciphertext's packing (num_slots).
+     * @return Ciphertext whose first elementCount slots are unchanged, with
+     *         elementCount-periodic copies filling the rest of totalSlots.
+     */
+    static inline Ctext replicate_across_ring(CryptoContext<DCRTPoly>& context, Ctext ciphertext, int elementCount, int totalSlots) {
+        int reps = totalSlots / elementCount;
+        if (reps <= 1) {
+            return ciphertext;
+        }
+        reps = static_cast<int>(nextPowerOf2(static_cast<unsigned int>(reps)));
+        Ctext tiled = ciphertext;
+        int coverage = elementCount;
+        for (int r = 1; r < reps; r *= 2) {
+            tiled = context->EvalAdd(tiled, context->EvalRotate(tiled, -coverage));
+            coverage *= 2;
+        }
+        return tiled;
     }
 
 
@@ -613,18 +654,17 @@ namespace utilsdata {
 
 
     /**
-     * @brief Prepare convolution kernels for encryption.
+     * @brief Mask of windows of ones separated by a zero, with leading and trailing zero padding, repeated over tiles.
      *
-     * This function takes the raw convolution kernels, applies binary masks to 
-     * clean them, and encodes them for encryption. The resulting encoded kernels 
-     * are returned as a vector of plaintexts.
+     * One tile: starting_padding zeros, then windows of window_length ones each followed by one zero, until
+     * max_length - ending_padding slots, trimmed or zero-padded to max_length. The tile is repeated tile_count times.
      *
-     * @param main_kernel 3D vector containing the raw convolution kernels.
-     * @param kernelWidth_sq Square of the kernel width (e.g., 9 for 3x3).
-     * @param cols_square Square of the number of columns in the input (e.g., 16 for 4x4).
-     * @param dim1 First dimension size for masking.
-     * @param encode_level Level to use for encoding.
-     * @return Vector of encoded plaintext kernels ready for encryption.
+     * @param starting_padding Leading zeros of every tile.
+     * @param ending_padding   Slots left at the end of every tile (zeros).
+     * @param window_length    Ones per window.
+     * @param max_length       Slots of one tile.
+     * @param tile_count       Number of tiles (e.g. channels).
+     * @return Mask of tile_count * max_length values.
      */
     static inline vector<double> build_tile_mask(int starting_padding, int ending_padding, 
         int window_length, int max_length, int tile_count) {

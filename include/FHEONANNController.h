@@ -24,11 +24,6 @@
 * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ********************************************************************************************************************/
 
-/*******************************************************************************************************************
- * This ANN controller is used to define all ANN layers used in this project such as; 
- * Convolution, avgpool, fclinear
- *******************************************************************************************************************/
-
 #ifndef FHEON_ANNCONCROLLER_H
 #define FHEON_ANNCONCROLLER_H
 
@@ -46,6 +41,13 @@ using namespace std;
 using namespace utils;
 using namespace utilsdata;
 
+/**
+ * @brief Original FHEON ANN controller: convolution, average pooling, linear and ReLU primitives.
+ *
+ * The single-input models now use FHEONANNStandardController (same primitives, minimal rotation keys) or
+ * FHEONANNDiagonalController. This class remains the base of FHEONANNStandardBatchController, the controller of the
+ * benchmark models and the source of downsample_with_multiple_channels for the training forward pass.
+ */
 class FHEONANNController{
 
 private:
@@ -97,7 +99,27 @@ public:
     Ctext he_linear(Ctext& encryptedInput, vector<Ptext>& weightMatrix, Ptext& biasInput, int inputSize, int outputSize, int rotatePositions);
     Ctext he_linear_optimized(Ctext& encryptedInput, vector<Ptext>& weightMatrix, Ptext& biasInput, int inputSize, int outputSize);
 
+    vector<int> generate_diagonal_convolution_rotation_positions(int inputWidth, int inputChannels, int stride = 1, int channelGroup = 0);
+    vector<int> generate_avgpool_linear_rotation_positions(int inputWidth, int inputChannels, int outputs);
+    int diagonal_kernel_level(const Ctext& encryptedInput, int inputWidth, int stride = 1, int channelGroup = 0);
+    Ctext he_convolution_diagonal(const Ctext& encryptedInput, const vector<vector<Ptext>>& kernelData, Ptext& biasInput, int inputWidth);
+    vector<Ctext> he_convolution_and_shortcut_diagonal(const Ctext& encryptedInput, const vector<vector<Ptext>>& kernelData,
+                            const vector<Ptext>& shortcutKernelData, Ptext& biasInput, Ptext& shortcutBiasInput,
+                            int inputWidth, int inputChannels, int channelGroup = 0);
+    vector<int> generate_convolution_layout_rotation_positions(int kernelWidth, int rowStride, int colStride, int channelStride, int numGroups, const vector<int>& subShifts);
+    vector<int> generate_sumpool_layout_rotation_positions(int rowStride, int colStride);
+    vector<int> generate_linear_diagonal_rotation_positions(int numSlots, int numDiagonals, int babySteps);
+    Ctext he_convolution_layout(const Ctext& encryptedInput, const vector<vector<vector<Ptext>>>& kernelData, Ptext& biasInput,
+                            int kernelWidth, int rowStride, int colStride, int channelStride, int numGroups, const vector<int>& subShifts);
+    Ctext he_sumpool_layout(const Ctext& encryptedInput, int rowStride, int colStride);
+    Ctext he_avgpool_diagonal(const Ctext& encryptedInput, int inputWidth, int inputChannels, int outputSlots, int channelGroup = 0);
+    vector<int> generate_avgpool_diagonal_rotation_positions(int inputWidth, int inputChannels, int outputSlots, int channelGroup = 0);
+    Ctext he_linear_diagonal(const Ctext& encryptedInput, const vector<vector<Ptext>>& weightDiagonals, Ptext& biasInput, int numDiagonals);
+    Ctext he_globalavgpool_linear(const Ctext& encryptedInput, const vector<Ptext>& weightMatrix, Ptext& biasInput, int inputWidth, int inputChannels);
+
     Ctext he_relu(Ctext& encryptedInput, double scale, int vectorSize, int polyDegree = 59);
+    Ctext he_relu_scalar(const Ctext& encryptedInput, double scale, int polyDegree = 59);
+    Ctext he_relu_normalized(const Ctext& encryptedInput, double scale, int polyDegree = 59);
     Ctext he_sum_two_ciphertexts(Ctext& firstInput, Ctext& secondInput); 
 
 protected:
@@ -106,6 +128,12 @@ protected:
 private:
     Ctext basic_striding(Ctext in_cipher, int inputWidth, int widthOut,  int stride);
     Ctext downsample(const Ctext& input, int inputWidth, int stride);
+    Ctext diagonal_channel_sum(const vector<Ctext>& taps, const vector<vector<Ptext>>& kernelData, int blockSize);
+    Ctext plain_inner_product(const vector<Ctext>& taps, const vector<Ptext>& kernelData);
+    Ctext rescale_pending(const Ctext& input);
+    vector<Ctext> downsample_channels(const vector<Ctext>& inputs, int inputWidth, int inputChannels, int channelGroup);
+    Ctext masked_rotation_sum(Ctext input, const vector<Ptext>& masks, int rotation);
+    int diagonal_channel_group(int numChannels);
 
     Ctext batch_convolution_operation(const vector<Ctext>& rotatedInputs, const vector<Ptext>& kernelData, int kernelWidth, int inputSize,  int inputChannels);
 

@@ -41,8 +41,9 @@ You can build and run FHEON either **manually (natively)** or via **Docker**. Fo
 ├── AllHEKeys/            # Generated key pair directories and serialization data
 ├── CMakeLists.txt        # Configurable CMake build definition
 ├── Dockerfile            # Multi-stage Docker image build specification
-├── HEBatchModels/        # Batch/high-throughput model source code (TResNet20, TResNet34)
-├── HESingleModels/       # Single-input model source code (LeNet5, ResNet20, ResNet34, VGG)
+├── HEBatchModels/        # Threaded batch/high-throughput model source code (TResNet20, TResNet34)
+├── HEDiagonalSingleModels/# Non-threaded diagonal single-input model source code
+├── HESingleModels/       # Sequential single-input model source code (LeNet5, ResNet20, ResNet34, VGG)
 ├── LICENSE.txt           # MIT License
 ├── README.md             # Project documentation (this file)
 ├── appendix.md           # Replication checklist and security notes for PETS/PoPETs 2026 artifact evaluation
@@ -110,15 +111,14 @@ FHEON's compilation is fully parameterized. You can pass the following options d
 
 | CMake Option | Allowed Values | Default | Description |
 | :--- | :--- | :--- | :--- |
-| **`MODE`** | `ALL`, `SINGLE_INPUTS`, `BATCH_INPUTS` | `ALL` | Pipeline mode: single-input models, batched models, or both. |
-| **`SINGLE_MODEL`** | `ALL`, `BasicMLP`, `LeNet5`, `ResNet20`, `VGG11`, `VGG16`, `ResNet34` | `ALL` | Specific single-input model to compile (applicable if `MODE` is `SINGLE_INPUTS` or `ALL`). |
-| **`BATCH_MODEL`** | `ALL`, `ResNet20`, `ResNet34` | `ALL` | Specific batch model to compile (applicable if `MODE` is `BATCH_INPUTS` or `ALL`). |
-| **`BATCH_SIZE`** | `ALL`, `16`, `32`, `64`, `128`, `256`, `512` | `ALL` | Specific batch size to compile (applicable if `MODE` is `BATCH_INPUTS` or `ALL`). |
+| **`MODE`** | `ALL`, `STANDARD_SINGLE_INPUT`, `SINGLE_INPUTS`, `BATCH_INPUTS`, `TRAINING`, `TESTING` | `ALL` | Public build mode: single-input models, threaded batch models, encrypted training, or a custom test build. |
+| **`MODEL`** | `ALL`, `BasicMLP`, `LeNet5`, `ResNet20`, `VGG11`, `VGG16`, `ResNet34` | `ALL` | Specific model to compile when either single-input or batch mode is selected. |
+| **`BATCH_SIZE`** | `ALL`, `16`, `32`, `64`, `128`, `256`, `512` | `ALL` | Specific batch size for the threaded fixed-batch models. |
 | **`TEST_SIZE`** | Integer (e.g. `10`, `20`, `50`) | `10` | Default test dataset size embedded in single-input model executables. |
 | **`BUILD_STATIC`** | `ON`, `OFF` | `OFF` | Link against OpenFHE's static libraries instead of shared libraries. |
 
 > [!NOTE]
-> Setting parameters to `ALL` compiles all available options/variants under that mode. It might take longer but generates all binaries.
+> The public repository keeps the threaded batch pipeline and sequential single-input pipeline. The diagonal single-input variants are included as a non-threaded option alongside the standard single-input models; benchmark-only variants are not part of this public repo.
 
 ### Compilation Examples
 
@@ -136,13 +136,13 @@ make -j$(nproc)
 
 **Build only ResNet20 single-input model**
 ```bash
-cmake -DMODE=SINGLE_INPUTS -DSINGLE_MODEL=ResNet20 ..
+cmake -DMODE=SINGLE_INPUTS -DMODEL=ResNet20 ..
 make -j$(nproc)
 ```
 
 **Build high-throughput ResNet20 with batch size 64**
 ```bash
-cmake -DMODE=BATCH_INPUTS -DBATCH_MODEL=ResNet20 -DBATCH_SIZE=64 ..
+cmake -DMODE=BATCH_INPUTS -DMODEL=ResNet20 -DBATCH_SIZE=64 ..
 make -j$(nproc)
 ```
 

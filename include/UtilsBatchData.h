@@ -24,7 +24,7 @@
 ********************************************************************************************************************/
 
 /**
- * @file UtilsBatchData
+ * @file UtilsBatchData.h
  * @brief Manage weights and baises for batch neural networks
  *
  * This file provides functions to handle data preparation tasks, including
@@ -42,13 +42,83 @@
 #include <fstream>
 #include <sstream>
 #include <thread>
+#include <functional>
 #include <openfhe.h>
+#include "Utils.h"
 
 using namespace std;
 using namespace std::chrono;
 using namespace lbcrypto;
 
 namespace utilsbatchdata {
+
+    /*********************************************************************************************************************
+     * Batches of any size: a batch program evaluates exactly the images it is given (--index-value, --test-size, or a
+     * packed selection of any images). They are split into batches of the program's batch size; the last batch is
+     * completed with blank (zero) images, which are evaluated but never reported.
+     *********************************************************************************************************************/
+
+    /** number of batches of batchSize images needed for numImages images */
+    static inline int num_batches(int numImages, int batchSize) {
+        return (numImages + batchSize - 1) / batchSize;
+    }
+
+    /**
+     * @brief The batchSize images of a batch: images first, first + 1, ... of imagesData, blank from endImage on.
+     *
+     * @param imagesData Images read from the dataset (at least endImage of them).
+     * @param first Index in imagesData of the first image of the batch.
+     * @param batchSize Images per batch.
+     * @param endImage One past the last image to evaluate: the positions from there on are blank.
+     */
+    static inline vector<vector<double>> batch_images(const vector<vector<double>>& imagesData, int first, int batchSize, int endImage) {
+        size_t imageSize = imagesData.empty() ? 0 : imagesData[0].size();
+        vector<vector<double>> batch;
+        batch.reserve(batchSize);
+        for (int b = 0; b < batchSize; b++) {
+            int index = first + b;
+            if (index < endImage && index < static_cast<int>(imagesData.size())) batch.push_back(imagesData[index]);
+            else batch.push_back(vector<double>(imageSize, 0.0));
+        }
+        return batch;
+    }
+
+    /**
+     * @brief Report the predictions of the real images of a batch.
+     *
+     * For i < numImages, the label of image firstIndex + i (dataset index, from 0) is the argmax of logitAt(i, k),
+     * k < numClasses. Prints the lines of read_batch_inferenced_label ("Batch <index> -> Predicted Label: ..." and the
+     * logits at verbose level 2), records the accuracy against the true labels and appends the labels to
+     * predictions_file. Blank padding images are never passed here.
+     *
+     * @return The predicted labels.
+     */
+    static inline vector<int> report_batch_predictions(int firstIndex, int numImages, int numClasses,
+                                                       const std::function<double(int, int)>& logitAt, const string& predictions_file) {
+        vector<int> labels;
+        ofstream predictionsOut;
+        if (!predictions_file.empty()) predictionsOut.open(predictions_file, ios_base::app);
+        vector<double> logits(numClasses);
+        for (int i = 0; i < numImages; i++) {
+            for (int k = 0; k < numClasses; k++) logits[k] = logitAt(i, k);
+            int label = distance(logits.begin(), max_element(logits.begin(), logits.end()));
+            labels.push_back(label);
+            int index = firstIndex + i;
+            if (utils::verbose_level == utils::level_zero) {
+                cout << "Batch " << index << " -> Predicted Label: " << label << endl;
+            } else {
+                cout << "Batch " << index << " -> Predicted Label: " << label << " (Score: " << logits[label] << ")" << endl;
+            }
+            if (utils::verbose_level >= utils::level_two) {
+                cout << "Weights for Batch " << index << ": [ ";
+                for (double value : logits) cout << value << " ";
+                cout << "]" << endl;
+            }
+            utils::recordPrediction(label);
+            if (predictionsOut.is_open()) predictionsOut << label << endl;
+        }
+        return labels;
+    }
 
     /**
      * @brief Load numeric data from a CSV file.

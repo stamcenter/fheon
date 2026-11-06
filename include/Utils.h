@@ -25,7 +25,7 @@
 ********************************************************************************************************************/
 
 /**
- * @file utils
+ * @file Utils.h
  * @brief Plain secure utility functions used as general helpers throughout the project.
  *
  * This file defines various helper functions for secure computations and 
@@ -39,6 +39,13 @@
 #include <openfhe.h>
 #include <iomanip>
 #include <sstream>
+#include <mutex>
+#include <thread>
+#include <exception>
+#include <atomic>
+#include <condition_variable>
+#include <omp.h>
+#include <sys/resource.h>
 
 using namespace std;
 using namespace std::chrono;
@@ -54,12 +61,246 @@ inline double image_circuit_time_secs = 0.0;
 inline double image_runtime_secs = 0.0;
 inline double image_bootstrap_time_ms = 0.0;
 inline double accumulated_circuit_time_ms = 0.0;
+inline std::mutex timing_mutex;
 inline std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> image_start_time;
 inline std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> program_start_time;
 inline int operation_count = 0;
+inline bool measure_peak_memory = true;
+/** largest number of worker threads of the multithreaded primitives: the system threads by default, set with --threads (0 also uses
+ *  hardware_concurrency()). OpenFHE already parallelizes every operation with OpenMP, and each worker thread holds its own
+ *  ciphertexts and bootstrapping temporaries, so fewer workers trade little speed for much less memory. */
+inline int max_threads = std::max(1, (int)std::thread::hardware_concurrency());
+
+/** number of worker threads for totalWork independent tasks: at most max_threads (hardware_concurrency() when 0) */
+static inline int worker_threads(int totalWork) {
+    int limit = max_threads > 0 ? max_threads : (int)std::thread::hardware_concurrency();
+    return std::max(1, std::min(totalWork, limit > 0 ? limit : 4));
+}
+inline std::string last_printed_peak_memory = "";
+
+/** true inside a worker of run_parallel_for: a nested parallel loop runs in its calling thread instead of starting
+ *  threads of its own (OpenFHE already uses OpenMP inside every operation) */
+inline thread_local bool in_parallel_region = false;
+
+/** OpenMP threads of the OpenFHE operations run by one of numWorkers worker threads: the hardware threads are shared
+ *  among the workers (OpenFHE parallelizes every operation with OpenMP, a team per worker would oversubscribe the
+ *  cores); the calling thread keeps the default OpenMP setting */
+static inline void use_worker_openmp_share(int numWorkers) {
+    int hardware = static_cast<int>(std::thread::hardware_concurrency());
+    omp_set_num_threads(std::max(1, hardware / std::max(1, numWorkers)));
+}
+
+/** number of workers for totalWork tasks under maxThreads: 1 runs in the calling thread, 0 uses worker_threads()
+ *  (--threads or all hardware threads), a larger value caps worker_threads() */
+static inline int parallel_worker_count(int totalWork, int maxThreads) {
+    if (totalWork <= 1 || maxThreads == 1 || in_parallel_region) return 1;
+    int numThreads = worker_threads(totalWork);
+    return maxThreads > 1 ? std::min(numThreads, maxThreads) : numThreads;
+}
+
+/**
+ * @brief Split [0, totalWork) into contiguous blocks and run worker(start, end) on each block in its own thread.
+ *
+ * With one worker (maxThreads == 1, a single task, or a call from inside another parallel loop) worker(0, totalWork)
+ * runs in the calling thread, so a sequential controller executes exactly its original loop. An exception thrown in a
+ * worker is rethrown in the caller once all workers have joined.
+ */
+template <typename Func>
+static inline void run_parallel_for(int totalWork, Func worker, int maxThreads = 0) {
+    if (totalWork <= 0) return;
+    int numThreads = parallel_worker_count(totalWork, maxThreads);
+    if (numThreads == 1) {
+        worker(0, totalWork);
+        return;
+    }
+    std::vector<std::thread> threads;
+    std::vector<std::exception_ptr> errors(numThreads);
+    int block = (totalWork + numThreads - 1) / numThreads;
+    for (int t = 0; t < numThreads; t++) {
+        int start = t * block;
+        int end = std::min(start + block, totalWork);
+        if (start >= end) break;
+        threads.emplace_back([&worker, &errors, t, start, end, numThreads]() {
+            in_parallel_region = true;
+            use_worker_openmp_share(numThreads);
+            try {
+                worker(start, end);
+            } catch (...) {
+                errors[t] = std::current_exception();
+            }
+        });
+    }
+    for (auto &th : threads) th.join();
+    for (auto &error : errors) {
+        if (error) std::rethrow_exception(error);
+    }
+}
+
+/**
+ * @brief Ordered fold with parallel terms: compute(i) for the indices of order, in blocks of one result per worker,
+ * then consume(i, result) for every index in the order of order.
+ *
+ * For folds that depend on the order (Horner placements, merges): the independent terms are computed in parallel while
+ * at most one block of results is held. With one worker it is the plain loop compute-then-consume per index.
+ */
+template <typename T, typename Compute, typename Consume>
+static inline void run_parallel_ordered(const std::vector<int>& order, Compute compute, Consume consume, int maxThreads = 0) {
+    int total = static_cast<int>(order.size());
+    int block = parallel_worker_count(total, maxThreads);
+    std::vector<T> results(block);
+    for (int first = 0; first < total; first += block) {
+        int count = std::min(block, total - first);
+        run_parallel_for(count, [&](int start, int end) {
+            for (int k = start; k < end; k++) {
+                results[k] = compute(order[first + k]);
+            }
+        }, maxThreads);
+        for (int k = 0; k < count; k++) {
+            consume(order[first + k], results[k]);
+            results[k] = T();
+        }
+    }
+}
+
+/**
+ * @brief Pipeline over a sequential chain: produce(i) in the order of order (e.g. the next rotation of a running
+ * ciphertext), compute(i, input) for a block of indices in parallel, then consume(i, result) in order.
+ *
+ * Holds at most one block of inputs and results; with one worker it is the plain loop produce-compute-consume.
+ */
+template <typename In, typename Out, typename Produce, typename Compute, typename Consume>
+static inline void run_parallel_pipeline(const std::vector<int>& order, Produce produce, Compute compute, Consume consume, int maxThreads = 0) {
+    int total = static_cast<int>(order.size());
+    int block = parallel_worker_count(total, maxThreads);
+    std::vector<In> inputs(block);
+    std::vector<Out> results(block);
+    for (int first = 0; first < total; first += block) {
+        int count = std::min(block, total - first);
+        for (int k = 0; k < count; k++) {
+            inputs[k] = produce(order[first + k]);
+        }
+        run_parallel_for(count, [&](int start, int end) {
+            for (int k = start; k < end; k++) {
+                results[k] = compute(order[first + k], inputs[k]);
+            }
+        }, maxThreads);
+        for (int k = 0; k < count; k++) {
+            inputs[k] = In();
+            consume(order[first + k], results[k]);
+            results[k] = Out();
+        }
+    }
+}
+
+/**
+ * @brief Streaming ordered fold: worker threads compute(i) for the indices of order, taken in that order from a shared
+ * counter, while the calling thread runs consume(i, result) in the order of order as soon as each result is ready.
+ *
+ * There is no barrier between blocks: a fold that must keep its order (a Horner placement with a single rotation key,
+ * merges) overlaps with the parallel computation of its terms. With one worker it is the plain loop compute-then-consume
+ * per index. An exception in compute or consume stops the workers and is rethrown in the caller.
+ */
+template <typename T, typename Compute, typename Consume>
+static inline void run_parallel_stream(const std::vector<int>& order, Compute compute, Consume consume, int maxThreads = 0) {
+    int total = static_cast<int>(order.size());
+    int numThreads = parallel_worker_count(total, maxThreads);
+    if (numThreads == 1) {
+        for (int k = 0; k < total; k++) {
+            T result = compute(order[k]);
+            consume(order[k], result);
+        }
+        return;
+    }
+    std::vector<T> results(total);
+    std::vector<char> state(total, 0);      /** 0 pending, 1 ready, 2 failed */
+    std::mutex lock;
+    std::condition_variable readyCondition;
+    std::atomic<int> next{0};
+    std::exception_ptr error;
+    auto worker = [&]() {
+        in_parallel_region = true;
+        use_worker_openmp_share(numThreads);
+        while (true) {
+            int k = next.fetch_add(1);
+            if (k >= total) break;
+            try {
+                T result = compute(order[k]);
+                std::lock_guard<std::mutex> guard(lock);
+                results[k] = std::move(result);
+                state[k] = 1;
+            } catch (...) {
+                std::lock_guard<std::mutex> guard(lock);
+                if (!error) error = std::current_exception();
+                state[k] = 2;
+                next = total;
+            }
+            readyCondition.notify_all();
+        }
+    };
+    std::vector<std::thread> threads;
+    for (int t = 0; t < numThreads; t++) threads.emplace_back(worker);
+    try {
+        for (int k = 0; k < total; k++) {
+            T result;
+            {
+                std::unique_lock<std::mutex> guard(lock);
+                readyCondition.wait(guard, [&] { return state[k] != 0 || error; });
+                if (state[k] != 1) break;
+                result = std::move(results[k]);
+                results[k] = T();
+            }
+            consume(order[k], result);
+        }
+    } catch (...) {
+        std::lock_guard<std::mutex> guard(lock);
+        if (!error) error = std::current_exception();
+        next = total;
+    }
+    for (auto &th : threads) th.join();
+    if (error) std::rethrow_exception(error);
+}
+
+/** indices n-1, n-2, ..., 0 (the order of the Horner placements) */
+static inline std::vector<int> descending_indices(int n) {
+    std::vector<int> order(std::max(n, 0));
+    for (int i = 0; i < n; i++) order[i] = n - 1 - i;
+    return order;
+}
+
+/** indices 0, 1, ..., n-1 */
+static inline std::vector<int> ascending_indices(int n) {
+    std::vector<int> order(std::max(n, 0));
+    for (int i = 0; i < n; i++) order[i] = i;
+    return order;
+}
+
+
+
+/**
+ * @brief Peak resident memory of the process so far, formatted in GB.
+ *
+ * Reads the high-water mark kept by the kernel, so it covers everything since the program
+ * started (context and key generation included).
+ */
+static inline std::string peakMemoryString() {
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(1) << usage.ru_maxrss / (1024.0 * 1024.0) << " GB";
+    return ss.str();
+}
+
+/**
+ * @brief Print the peak memory next to the total timings. Does nothing when --peak-memory is false.
+ */
+static inline void printPeakMemory() {
+    if (!measure_peak_memory) return;
+    std::cout << "Peak Memory Used: " << peakMemoryString() << std::endl;
+}
 
 static inline void printTiming(const std::string &prefix, const std::string &op_tag, std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> start_time) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time);
+    std::lock_guard<std::mutex> timingLock(timing_mutex);
 
     std::string print_prefix = prefix;
     if (op_tag != "Bts") {
@@ -79,17 +320,42 @@ static inline void printTiming(const std::string &prefix, const std::string &op_
         std::stringstream ss;
         ss << std::fixed << std::setprecision(3);
         if (op_tag == "Bts") {
-            ss << print_prefix << " (Op: " << dur_secs.count() << ":" << dur_ms_rem.count() << "s (Bts:" << (image_bootstrap_time_ms / 1000.0) << "s -- Total: " << total_prog_secs.count() << "s))";
+            ss << print_prefix << " (Op: " << dur_secs.count() << ":" << dur_ms_rem.count() << "s (Bts:" << (image_bootstrap_time_ms / 1000.0) << "s -- Total: " << total_prog_secs.count() << "s)";
         } else {
-            ss << print_prefix << " (Op: " << dur_secs.count() << ":" << dur_ms_rem.count() << "s (Crts:" << (accumulated_circuit_time_ms / 1000.0) << "s Total : " << total_prog_secs.count() << "s))";
+            ss << print_prefix << " (Op: " << dur_secs.count() << ":" << dur_ms_rem.count() << "s (Crts:" << (accumulated_circuit_time_ms / 1000.0) << "s Total : " << total_prog_secs.count() << "s)";
         }
+        if (measure_peak_memory) {
+            // only shown when the peak has changed since the last timing line
+            std::string peak_memory = peakMemoryString();
+            if (peak_memory != last_printed_peak_memory) {
+                ss << ", Mem: " << peak_memory;
+                last_printed_peak_memory = peak_memory;
+            }
+        }
+        ss << ")";
         std::cout << ss.str() << std::endl;
+    }
+}
+
+
+static inline void measureTiming(const std::string &prefix, const std::string &op_tag, std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> start_time) {
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time);
+    std::lock_guard<std::mutex> timingLock(timing_mutex);
+
+    if (op_tag != "Bts") {
+        accumulated_circuit_time_ms += duration.count();
+    }
+    else{
+        image_bootstrap_time_ms += duration.count();
     }
 }
 
 static inline void printBootstrapTiming(const std::string &prefix, std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> start_bootstrap) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_bootstrap);
-    image_bootstrap_time_ms += duration.count();
+    {
+        std::lock_guard<std::mutex> timingLock(timing_mutex);
+        image_bootstrap_time_ms += duration.count();
+    }
     printTiming(prefix, "Bts", start_bootstrap);
 }
 
@@ -108,7 +374,7 @@ static inline void printModelLayer(const std::string &layer_name, int layer_num,
 
 static inline void printModelLayer(const std::string &layer_string) {
     if (verbose_level == level_zero) return;
-    std::string name = "   Layer";
+    std::string name = "    Layer";
     int num = -1;
     int block = -1;
     size_t layer_pos = layer_string.find("layer");
@@ -184,6 +450,8 @@ namespace utils {
     using ::image_start_time;
     using ::program_start_time;
     using ::operation_count;
+    using ::measure_peak_memory;
+    using ::printPeakMemory;
     using ::printBootstrapTiming;
     using ::printTiming;
     using ::printModelLayer;
@@ -198,8 +466,46 @@ namespace utils {
     inline string predictions_file = "./fhepredictions.txt";
     inline int test_size = 250;
     inline int index_value = 0;
+
+    /** ground-truth labels of the loaded images (label of image i at position i) and the running accuracy counters */
+    inline vector<int> image_labels;
+    inline int predictions_made = 0;
+    inline int labelled_predictions = 0;
+    inline int correct_predictions = 0;
+
+    /**
+     * @brief Compare a predicted class with the ground-truth label of the current image.
+     *
+     * Predictions are expected in dataset order starting at index_value, one call per image,
+     * which is how the models loop. Prints whether the prediction is correct and updates the
+     * counters used by printAccuracy. Does nothing more than count when no label is available.
+     *
+     * @param predicted Predicted class index.
+     */
+    static inline void recordPrediction(int predicted) {
+        size_t image_index = index_value + predictions_made;
+        predictions_made++;
+        if (image_index >= image_labels.size()) return;
+        int label = image_labels[image_index];
+        bool correct = (predicted == label);
+        labelled_predictions++;
+        if (correct) correct_predictions++;
+        cout << "True Label      : " << label << " -- " << (correct ? "Correct" : "Incorrect") << endl;
+    }
+
+    /**
+     * @brief Print the accuracy over all the predictions recorded so far.
+     */
+    static inline void printAccuracy() {
+        if (labelled_predictions == 0) return;
+        std::stringstream ss;
+        ss << std::fixed << std::setprecision(2) << (100.0 * correct_predictions / labelled_predictions);
+        cout << "Accuracy: " << correct_predictions << "/" << labelled_predictions << " (" << ss.str() << "%)" << endl;
+    }
+    
     inline string keys_folder = "./../AllHEKeys/";
     inline string dataset_path = "";
+    inline string training_data_dir = "./../encrypted_training_data/";
 
     /**
      * @brief Print the welcome message with project and author details, and parsed runtime configuration.
@@ -219,6 +525,9 @@ namespace utils {
         cout<< "  - Keys Folder:        " << utils::keys_folder << endl;
         cout<< "  - Weights Folder:     " << utils::weights_folder << endl;
         cout<< "  - Dataset Path:       " << utils::dataset_path << endl;
+        cout<< "  - Training Data Dir:  " << utils::training_data_dir << endl;
+        cout<< "  - Peak Memory:        " << (measure_peak_memory ? "true" : "false") << endl;
+        cout<< "  - Worker Threads:     " << (max_threads > 0 ? to_string(max_threads) : "all (" + to_string(std::thread::hardware_concurrency()) + ")") << endl;
         if (!utils::predictions_file.empty()) {
             cout<< "  - Predictions File:   " << utils::predictions_file << endl;
         }
@@ -258,13 +567,38 @@ namespace utils {
         auto mins = duration_cast<minutes>(secs);
         secs -= duration_cast<seconds>(mins);
 
-        cout<< endl;
+        // cout<< endl;
         if (mins.count() < 1) {
-            cout << "------- " << caption << ": " << secs.count() << ":" << ms.count() << "s" << " (Total: " << duration_cast<seconds>(total_duration).count() << "s)" << " -------- " << endl;
+            cout << "--- " << caption << ": " << secs.count() << ":" << ms.count() << "s" << " (Total: " << duration_cast<seconds>(total_duration).count() << "s)" << " --- " << endl;
         } else {
-            cout << "-------- " << caption << ": " << mins.count() << "." << secs.count() << ":" << ms.count() << " (Total: " << duration_cast<minutes>(total_duration).count() << "mins)" << " -------- " << endl;
+            cout << "--- " << caption << ": " << mins.count() << "." << secs.count() << ":" << ms.count() << " (Total: " << duration_cast<minutes>(total_duration).count() << "mins)" << " --- " << endl;
         }
         cout<< endl;
+    }
+
+    /**
+     * print the duration of the image processing steps.
+    */
+    static inline void printTotalDurations() {
+        std::lock_guard<std::mutex> timingLock(timing_mutex);
+        double total_bts_secs = image_bootstrap_time_ms / 1000.0;
+        double image_crt_time_secs = accumulated_circuit_time_ms / 1000.0;
+        image_runtime_secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - image_start_time).count();
+        cout << "Total Bootstrapping Time: " << total_bts_secs << "s" << endl;
+        cout << "Total Circuit Time: " << image_crt_time_secs << "s" << endl;
+        cout << "Total Runtime: " << image_runtime_secs << "s" << endl;
+        printPeakMemory();
+    }
+
+    /**
+     * print the duration of the processing steps of a batch of images: the totals and their share per image.
+    */
+    static inline void printBatchDurations(int numImages) {
+        printTotalDurations();
+        std::lock_guard<std::mutex> timingLock(timing_mutex);
+        cout << "Bootstrapping Time per Image: " << image_bootstrap_time_ms / 1000.0 / numImages << "s" << endl;
+        cout << "Circuit Time per Image: " << accumulated_circuit_time_ms / 1000.0 / numImages << "s" << endl;
+        cout << "Runtime per Image: " << image_runtime_secs / numImages << "s" << endl;
     }
 
     /**
@@ -362,6 +696,9 @@ namespace utils {
         string cifar100tPath;
         string mnistPath;
         string predictions_file;
+        string training_data_dir;
+        bool peak_memory = true;
+        int max_threads = std::max(1, (int)std::thread::hardware_concurrency());
     };
 
     static inline RuntimeConfig parse_runtime_args(int argc, char* argv[], int default_test_size, int default_index_value, int default_verbose = 2) {
@@ -375,7 +712,8 @@ namespace utils {
             utils::cifar10tPath,
             utils::cifar100tPath,
             utils::mnistPath,
-            utils::predictions_file
+            utils::predictions_file,
+            utils::training_data_dir
         };
 
         bool has_custom_cifar10 = false;
@@ -385,7 +723,9 @@ namespace utils {
 
         for (int i = 1; i < argc; ++i) {
             const string arg = argv[i];
-            if (arg == "--test-size" && i + 1 < argc) {
+            if (arg == "--threads" && i + 1 < argc) {
+                config.max_threads = atoi(argv[++i]);
+            } else if (arg == "--test-size" && i + 1 < argc) {
                 config.test_size = atoi(argv[++i]);
             } else if (arg == "--index-value" && i + 1 < argc) {
                 config.index_value = atoi(argv[++i]);
@@ -401,6 +741,10 @@ namespace utils {
             } else if (arg.rfind("--weights-folder=", 0) == 0) {
                 config.weights_folder = arg.substr(strlen("--weights-folder="));
                 utils::has_custom_weights_folder = true;
+            } else if (arg == "--training-data-dir" && i + 1 < argc) {
+                config.training_data_dir = argv[++i];
+            } else if (arg.rfind("--training-data-dir=", 0) == 0) {
+                config.training_data_dir = arg.substr(strlen("--training-data-dir="));
             } else if (arg == "--cifar10-path" && i + 1 < argc) {
                 config.cifar10tPath = argv[++i];
                 has_custom_cifar10 = true;
@@ -441,6 +785,16 @@ namespace utils {
                 config.predictions_file = arg.substr(strlen("--output-file="));
             } else if (arg.rfind("--output=", 0) == 0) {
                 config.predictions_file = arg.substr(strlen("--output="));
+            } else if (arg.rfind("--peak-memory=", 0) == 0) {
+                string val = arg.substr(strlen("--peak-memory="));
+                config.peak_memory = (val == "true" || val == "1");
+            } else if (arg == "--peak-memory") {
+                if (i + 1 < argc && string(argv[i + 1]).rfind("--", 0) != 0) {
+                    string val = argv[++i];
+                    config.peak_memory = (val == "true" || val == "1");
+                } else {
+                    config.peak_memory = true;
+                }
             } else if (arg == "--load-context") {
                 if (i + 1 < argc && string(argv[i + 1]).rfind("--", 0) != 0) {
                     string val = argv[++i];
@@ -461,6 +815,8 @@ namespace utils {
         }
 
         verbose_level = config.verbose;
+        measure_peak_memory = config.peak_memory;
+        max_threads = config.max_threads;
         utils::weights_folder = config.weights_folder;
         utils::cifar10tPath = config.cifar10tPath;
         utils::cifar100tPath = config.cifar100tPath;
@@ -469,6 +825,7 @@ namespace utils {
         utils::test_size = config.test_size;
         utils::index_value = config.index_value;
         utils::keys_folder = config.keys_folder;
+        utils::training_data_dir = config.training_data_dir;
 
         // Resolve active dataset path
         string active_dataset_path = "";
@@ -485,7 +842,7 @@ namespace utils {
             for (auto &c : exec_name) c = tolower(c);
             if (exec_name.find("lenet") != string::npos || exec_name.find("mnist") != string::npos) {
                 active_dataset_path = config.mnistPath;
-            } else if (exec_name.find("tresnet34") != string::npos) {
+            } else if (exec_name.find("resnet34") != string::npos) {  // ResNet34 models (BResNet34*, ResNet34Diagonal) use CIFAR-100
                 active_dataset_path = config.cifar100tPath;
             } else {
                 active_dataset_path = config.cifar10tPath;
