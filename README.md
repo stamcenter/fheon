@@ -4,6 +4,8 @@ FHEON is a highly configurable framework designed for building **privacy-preserv
 
 At its core, FHEON leverages the **Cheon–Kim–Kim–Song (CKKS) scheme** as implemented in the **OpenFHE** library. CKKS is an approximate homomorphic encryption method optimized for efficient floating-point computations on real-valued data. FHEON allows developers and researchers to develop and deploy neural networks directly in the encrypted domain, guaranteeing that sensitive inputs, model outputs, and intermediate states remain completely encrypted throughout computation.
 
+For interactive exploration and rapid prototyping, [FHEON Studio](https://fheon-studio.ascslab-tools.org/) brings FHEON LIVE to the browser, where users can compile and run encrypted workflows live on encrypted data through the web without exposing raw inputs.
+
 This capability allows users to run complete inference tasks in the encrypted domain without ever exposing the underlying inputs, thereby ensuring strong data confidentiality. In doing so, FHEON enables secure deployment of machine learning models in sensitive environments, bridging the gap between utility and privacy in encrypted inference.
 
 ---
@@ -20,6 +22,10 @@ This capability allows users to run complete inference tasks in the encrypted do
 FHEON provides a **flexible and efficient platform** for researchers and developers to build HE-friendly neural networks without sacrificing accuracy or privacy.
 
 ---
+
+## FHEON Studio
+
+[FHEON Studio](https://fheon-studio.ascslab-tools.org/) brings FHEON LIVE to the browser, enabling users to compile and run encrypted workflows live on encrypted data through the web without exposing raw inputs. It is a convenient way to explore FHEON interactively and validate privacy-preserving inference workflows in real time.
 
 ## Documentation
 
